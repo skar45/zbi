@@ -1,10 +1,11 @@
 const std = @import("std");
+const expect = @import("std").testing.expect;
 const types = @import("types.zig");
 const debug = @import("debug.zig");
 const values = @import("values.zig");
-const Value = values.Value;
-const printValue = values.printValue;
 
+const printValue = values.printValue;
+const Value = values.Value;
 const Chunks = types.Chunks;
 const OpCode = types.Opcode;
 
@@ -17,52 +18,73 @@ const InterpretResult = enum {
 const MAX_STACK = 256;
 
 
-const VM = struct {
+pub const VM = struct {
     chunks: Chunks,
     code_ptr: [*]OpCode,
     stack: [MAX_STACK]Value,
     stack_ptr: [*]Value,
 
     pub fn init(chunks: Chunks) VM {
-        var stack: [MAX_STACK]Value =  undefined;
         return VM {
             .chunks = chunks,
-            .code_ptr = &(chunks.code),
-            .stack = stack,
-            .stack_ptr = &stack,
+            .code_ptr = chunks.code.items.ptr,
+            .stack = undefined,
+            .stack_ptr = undefined,
         };
     }
 
-    pub fn run(self: *VM) InterpretResult {
-        while (1) {
-            comptime if (debug.ENABLE_LOGGING) {
-                var slot = self.stack_ptr;
-                std.debug.print("          ", .{});
-                while (slot < &self.stack) {
-                    std.debug.print("[ ", .{});
-                    std.debug.print("{d}", .{slot.*});
-                    std.debug.print(" ]", .{});
-                    slot += 1;
-                }
-                std.debug.print("\n", .{});
-                const off: usize = self.code_ptr - self.chunks;
-                debug.disassembleInstruction(self.chunks, off);
-            };
+    fn debug_vm(self: *VM) !void {
+        var slot = @intFromPtr(&self.stack);
+        const stack_top = @intFromPtr(self.stack_ptr);
+        std.debug.print("          ", .{});
+        while (slot < stack_top) {
+            std.debug.print("[ ", .{});
+            const value: *f64 = @ptrFromInt(slot);
+            std.debug.print("{d}", .{value.*});
+            std.debug.print(" ]", .{});
+            slot += 8;
+        }
+        std.debug.print("\n", .{});
+        const off: usize = @intFromPtr(self.code_ptr) - @intFromPtr(self.chunks.code.items.ptr);
+        _ = try debug.disassembleInstruction(self.chunks, off);
+    }
+
+    inline fn binary_op(self: *VM, comptime op: []const u8) void {
+        const a = self.pop();
+        const b = self.pop();
+        switch (op[0]) {
+            '+' => self.push(a + b),
+            '-' => self.push(a - b),
+            '*' => self.push(a * b),
+            '/' => self.push(a / b),
+            else => unreachable
+        }
+    }
+
+    pub fn run(self: *VM) !InterpretResult {
+        self.stack_ptr = &self.stack;
+        while (true) {
+            if (comptime debug.ENABLE_LOGGING) {
+                try self.debug_vm();
+            }
             const stdout = std.io.getStdOut().writer();
             const instruction = self.code_ptr[0];
             self.code_ptr += 1;
             switch (instruction) {
                 .OP_CONSTANT => {
-                    const i = self.code_ptr[0];
+                    const i = @intFromEnum(self.code_ptr[0]);
                     self.code_ptr += 1;
-                    self.chunks.values.items[i];
+                    self.push(self.chunks.values.items[i]);
                 },
+                .OP_ADD => self.binary_op("+"),
+                .OP_SUBTRACT => self.binary_op("-"),
+                .OP_MULTIPLY => self.binary_op("*"),
+                .OP_DIVIDE => self.binary_op("/"),
                 .OP_NEGATE => {
-                    self.push(self.pop());
-                    break;
+                    self.push(-self.pop());
                 },
                 .OP_RETURN => {
-                    printValue(self.pop());
+                    try printValue(self.pop());
                     try stdout.print("\n", .{});
                     return InterpretResult.INTERPRET_OK;
                 },
@@ -76,12 +98,12 @@ const VM = struct {
     }
 
     pub fn push(self: *VM, value: Value) void {
-        self.stack_ptr.* = value;
+        self.stack_ptr[0] = value;
         self.stack_ptr += 1;
     }
 
     pub fn pop(self: *VM) Value {
         self.stack_ptr -= 1;
-        return self.stack_ptr.*;
+        return self.stack_ptr[0];
     }
 };

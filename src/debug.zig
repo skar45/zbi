@@ -13,9 +13,9 @@ fn simpleInstruction(name: []const u8, offset: usize) !usize {
 
 fn constantInstruction(name: []const u8, chunks: types.Chunks, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
-    const constant = chunks.code.items[offset + 1];
-    try stdout.print("{s} {d:4} ", .{name, constant});
-    try values.printValue(chunks.values.items[constant]);
+    const index = @intFromEnum(chunks.code.items[offset + 1]);
+    try stdout.print("{s} {d:4} ", .{name, index});
+    try values.printValue(chunks.values.items[index]);
     try stdout.print("\n", .{});
     return offset + 2;
 
@@ -30,11 +30,15 @@ pub fn disassembleInstruction(chunks: types.Chunks, offset: usize) !usize {
         try stdout.print("{d:4} ", .{chunks.lines.items[offset]});
     }
 
-    const instruction: types.Opcode = @enumFromInt(chunks.code.items[offset]);
+    const instruction: types.Opcode = chunks.code.items[offset];
     return switch (instruction) {
         .OP_RETURN => try simpleInstruction("OP_RETURN", offset),
-        .OP_NEGATE => try simpleInstruction("OP_NEGATE", offset),
         .OP_CONSTANT => try constantInstruction("OP_CONSTANT", chunks, offset),
+        .OP_ADD => try simpleInstruction("OP_ADD", offset),
+        .OP_SUBTRACT => try simpleInstruction("OP_SUBTRACT", offset),
+        .OP_MULTIPLY => try simpleInstruction("OP_MULTIPLY", offset),
+        .OP_DIVIDE => try simpleInstruction("OP_DIVIDE", offset),
+        .OP_NEGATE => try simpleInstruction("OP_NEGATE", offset),
         else => error.UnknownOpcode
     };
 }
