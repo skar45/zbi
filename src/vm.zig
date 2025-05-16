@@ -1,13 +1,14 @@
 const std = @import("std");
 const expect = @import("std").testing.expect;
-const types = @import("types.zig");
+const chunks = @import("chunks.zig");
 const debug = @import("debug.zig");
 const values = @import("values.zig");
+const compiler = @import("compiler.zig");
 
 const printValue = values.printValue;
 const Value = values.Value;
-const Chunks = types.Chunks;
-const OpCode = types.Opcode;
+const Chunks = chunks.Chunks;
+const OpCode = chunks.Opcode;
 
 const InterpretResult = enum {
     INTERPRET_OK,
@@ -17,6 +18,10 @@ const InterpretResult = enum {
 
 const MAX_STACK = 256;
 
+pub fn interpret(source: []u8) InterpretResult {
+    compiler.compile(source);
+    return InterpretResult.INTERPRET_OK;
+}
 
 pub const VM = struct {
     chunks: Chunks,
@@ -24,10 +29,10 @@ pub const VM = struct {
     stack: [MAX_STACK]Value,
     stack_ptr: [*]Value,
 
-    pub fn init(chunks: Chunks) VM {
+    pub fn init(c: Chunks) VM {
         return VM {
-            .chunks = chunks,
-            .code_ptr = chunks.code.items.ptr,
+            .chunks = c,
+            .code_ptr = c.code.items.ptr,
             .stack = undefined,
             .stack_ptr = undefined,
         };
