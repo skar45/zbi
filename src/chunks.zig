@@ -2,13 +2,13 @@ const std = @import("std");
 const Value = @import("values.zig").Value;
 
 pub const Opcode = enum(u8){
-    OP_RETURN,
-    OP_CONSTANT,
-    OP_ADD,
-    OP_SUBTRACT,
-    OP_MULTIPLY,
-    OP_DIVIDE,
-    OP_NEGATE,
+    RETURN,
+    CONSTANT,
+    ADD,
+    SUBTRACT,
+    MULTIPLY,
+    DIVIDE,
+    NEGATE,
     _
 };
 
@@ -18,12 +18,17 @@ pub const Chunks = struct {
     lines: std.ArrayList(usize),
     _arena:  std.heap.ArenaAllocator,
 
-    pub fn init() !Chunks {
+    inline fn allocatorError(err: std.mem.Allocator.Error) void {
+        std.debug.print("{}", .{err});
+        std.process.exit(70);
+    }
+
+    pub fn init() Chunks {
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         const allocator = arena.allocator();
-        const code = try std.ArrayList(Opcode).initCapacity(allocator, 2048);
-        const values_list = try std.ArrayList(Value).initCapacity(allocator, 1024);
-        const lines = try std.ArrayList(usize).initCapacity(allocator, 256);
+        const code = std.ArrayList(Opcode).initCapacity(allocator, 2048) catch |e| allocatorError(e);
+        const values_list = std.ArrayList(Value).initCapacity(allocator, 1024) catch |e| allocatorError(e);
+        const lines = std.ArrayList(usize).initCapacity(allocator, 256) catch |e| allocatorError(e);
 
         return Chunks {
             .code = code,
@@ -33,17 +38,18 @@ pub const Chunks = struct {
         };
     }
 
-    pub fn writeChunk(self: *Chunks,  code: Opcode, line: usize) !void {
-        try self.lines.append(line);
-        try self.code.append(code);
+    pub fn writeChunk(self: *Chunks,  code: Opcode, line: usize) void {
+        self.lines.append(line) catch |e| allocatorError(e);
+        self.code.append(code) catch |e| allocatorError(e);
     }
 
-    pub fn addConstant(self: *Chunks, value: Value) !Opcode {
-        try self.values.append(value);
+    pub fn addConstant(self: *Chunks, value: Value) Opcode {
+        self.values.append(value) catch |e| allocatorError(e);
+        // TODO: account for overflow
         return @enumFromInt(self.values.items.len - 1);
     }
 
-    pub fn deinit(self: *Chunks) !void {
+    pub fn deinit(self: *Chunks) void {
         self._arena.deinit();
     }
 };

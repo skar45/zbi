@@ -47,7 +47,7 @@ pub const Scanner = struct {
         return @intFromPtr(self.current.ptr) == self.end;
     }
 
-    inline fn advance(self: *Scanner) u8 {
+    pub inline fn advance(self: *Scanner) u8 {
         const char = self.current[0];
         self.current.ptr += 1;
         return char;

@@ -1,14 +1,14 @@
 const std = @import("std");
 const expect = @import("std").testing.expect;
-const chunks = @import("chunks.zig");
+const c = @import("chunks.zig");
 const debug = @import("debug.zig");
 const values = @import("values.zig");
 const compiler = @import("compiler.zig");
 
 const printValue = values.printValue;
 const Value = values.Value;
-const Chunks = chunks.Chunks;
-const OpCode = chunks.Opcode;
+const Chunks = c.Chunks;
+const OpCode = c.Opcode;
 
 const InterpretResult = enum {
     INTERPRET_OK,
@@ -19,8 +19,16 @@ const InterpretResult = enum {
 const MAX_STACK = 256;
 
 pub fn interpret(source: []u8) InterpretResult {
-    compiler.compile(source);
-    return InterpretResult.INTERPRET_OK;
+    var chunks = Chunks.init();
+    defer chunks.deinit();
+    if (!compiler.compile(source, chunks)) {
+        return InterpretResult.INTERPRET_COMPILE_ERROR;
+    }
+    var vm = VM.init(chunks);
+    return vm.run() catch {
+        std.debug.print("vm error", .{});
+        return InterpretResult.INTERPRET_RUNTIME_ERROR;
+    };
 }
 
 pub const VM = struct {
@@ -29,10 +37,10 @@ pub const VM = struct {
     stack: [MAX_STACK]Value,
     stack_ptr: [*]Value,
 
-    pub fn init(c: Chunks) VM {
+    pub fn init(chunks: Chunks) VM {
         return VM {
-            .chunks = c,
-            .code_ptr = c.code.items.ptr,
+            .chunks = chunks,
+            .code_ptr = chunks.code.items.ptr,
             .stack = undefined,
             .stack_ptr = undefined,
         };
@@ -76,19 +84,19 @@ pub const VM = struct {
             const instruction = self.code_ptr[0];
             self.code_ptr += 1;
             switch (instruction) {
-                .OP_CONSTANT => {
+                .CONSTANT => {
                     const i = @intFromEnum(self.code_ptr[0]);
                     self.code_ptr += 1;
                     self.push(self.chunks.values.items[i]);
                 },
-                .OP_ADD => self.binary_op("+"),
-                .OP_SUBTRACT => self.binary_op("-"),
-                .OP_MULTIPLY => self.binary_op("*"),
-                .OP_DIVIDE => self.binary_op("/"),
-                .OP_NEGATE => {
+                .ADD => self.binary_op("+"),
+                .SUBTRACT => self.binary_op("-"),
+                .MULTIPLY => self.binary_op("*"),
+                .DIVIDE => self.binary_op("/"),
+                .NEGATE => {
                     self.push(-self.pop());
                 },
-                .OP_RETURN => {
+                .RETURN => {
                     try printValue(self.pop());
                     try stdout.print("\n", .{});
                     return InterpretResult.INTERPRET_OK;

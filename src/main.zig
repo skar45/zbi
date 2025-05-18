@@ -51,27 +51,24 @@ pub fn main() !void {
         // repl()
     }
 
-    var chunks = try Chunks.init();
-    defer chunks.deinit() catch |e| {
-        std.debug.print("Error {}", .{e});
-    };
-    var constant = try chunks.addConstant(3.4);
-    try chunks.writeChunk(Opcode.OP_CONSTANT, 123);
-    try chunks.writeChunk(constant, 123);
+    var chunks = Chunks.init();
+    var constant = chunks.addConstant(3.4);
+    chunks.writeChunk(Opcode.CONSTANT, 123);
+    chunks.writeChunk(constant, 123);
 
-    constant = try chunks.addConstant(1.2);
-    try chunks.writeChunk(Opcode.OP_CONSTANT, 123);
-    try chunks.writeChunk(constant, 123);
+    constant = chunks.addConstant(1.2);
+    chunks.writeChunk(Opcode.CONSTANT, 123);
+    chunks.writeChunk(constant, 123);
 
-    try chunks.writeChunk(Opcode.OP_ADD, 123);
+    chunks.writeChunk(Opcode.ADD, 123);
 
-    constant = try chunks.addConstant(5.6);
-    try chunks.writeChunk(Opcode.OP_CONSTANT, 123);
-    try chunks.writeChunk(constant, 123);
+    constant = chunks.addConstant(5.6);
+    chunks.writeChunk(Opcode.CONSTANT, 123);
+    chunks.writeChunk(constant, 123);
 
-    try chunks.writeChunk(Opcode.OP_DIVIDE, 123);
-    try chunks.writeChunk(Opcode.OP_NEGATE, 123);
-    try chunks.writeChunk(Opcode.OP_RETURN, 123);
+    chunks.writeChunk(Opcode.DIVIDE, 123);
+    chunks.writeChunk(Opcode.NEGATE, 123);
+    chunks.writeChunk(Opcode.RETURN, 123);
     var vm = VM.init(chunks);
     _ = try vm.run();
 }
