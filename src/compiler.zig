@@ -1,40 +1,20 @@
 const std = @import("std");
-const s = @import("scanner.zig");
+const lexer = @import("scanner.zig");
 const c = @import("chunks.zig");
+const parserule = @import("parserule.zig");
+const debug = @import("debug.zig");
 
-const Scanner = s.Scanner;
-const TokenType = s.TokenType;
-const Token = s.Token;
+const Scanner = lexer.Scanner;
+const TokenType = lexer.TokenType;
+const Token = lexer.Token;
 const Chunks = c.Chunks;
 const Opcode = c.Opcode;
+const Precedence = parserule.Precedence;
+const ParseRule = parserule.ParseRule;
+const LOGGING  = debug.ENABLE_LOGGING;
+const rules = parserule.rules;
 
-pub const Precedence = enum {
-    NONE,
-    ASSIGNMENT,
-    OR,
-    AND,
-    EQUALITY,
-    COMPARISION,
-    TERM,
-    FACTOR,
-    UNARY,
-    CALL,
-    PRIMARY
-};
 
-const ParseFn = fn () void;
-
-const ParseRule = struct {
-    prefix: *ParseFn,
-    suffix: *ParseFn,
-    precednce: Precedence
-};
-
-const rules = comptime {
-    var rules: []const ParseRule = undefined;
-    rules[TokenType.LEFT_PAREN] = {
-    }
-};
 
 pub const Parser = struct {
     compilingChunk: Chunks,
@@ -81,7 +61,7 @@ pub const Parser = struct {
         self.previous = self.current;
         while (true) {
             self.current = &self.scanner.scanToken(); 
-            if (self.current.ttype != TokenType.ERROR) break;
+            if (self.current.ttype != .ERROR) break;
             self.errorAtCurrent(self.current.start);
         }
     }
@@ -109,6 +89,9 @@ pub const Parser = struct {
 
     pub inline fn endCompiler(self: *Parser) void {
         self.emitReturn();
+        if (comptime LOGGING) {
+            debug.disassembleChunk(self.compilingChunk, "code");
+        }
     }
 
     inline fn makeConstant(comptime T: type, self: *Parser, value: T) u8 {
@@ -120,19 +103,41 @@ pub const Parser = struct {
         self.emitBytes(Opcode.CONSTANT, self.makeConstant(f64, value));
     }
 
-    inline fn number(self: *Parser) void {
+    inline fn getRule(t_type: TokenType) *const ParseRule {
+        return &rules[@intFromEnum(t_type)];
+    }
+
+    inline fn parsePrecedence(self: *Parser, prec: Precedence) void {
+        self.advance();
+        const prefix_rule = getRule(self.previous.ttype).prefix;
+        if (prefix_rule == null) {
+            self.errorAtPrevious("Expect expression");
+            return;
+        }
+        prefix_rule();
+
+        while (@intFromEnum(prec) <= @intFromEnum(getRule(self.current.ttype).precedence)) {
+            self.advance();
+            const infix_rule = getRule(self.previous.ttype).infix;
+            if (infix_rule == null) {
+                self.errorAtPrevious("Expect expression");
+                return;
+            }
+            infix_rule();
+        }
+    }
+
+    pub inline fn number(self: *Parser) void {
         const value = std.fmt.parseFloat(f64, self.previous.start);
         self.emitConstant(value);
     }
 
-    inline fn parsePrecedence(self: *Parser, prec: Precedence) {
-    }
 
     inline fn expression(self: *Parser) void {
         self.parsePrecedence(Precedence.ASSIGNMENT);
     }
 
-    inline fn unary(self: *Parser) void {
+    pub inline fn unary(self: *Parser) void {
         const op_type = self.previous.ttype;
         self.parsePrecedence(Precedence.UNARY);
 
@@ -142,30 +147,33 @@ pub const Parser = struct {
         }
     }
 
-    inline fn binary(self: *Parser) void {
+    pub inline fn binary(self: *Parser) void {
         const op_type = self.previous.ttype;
         const rule = self.getRule(op_type);
         self.parsePrecedence(@enumFromInt(rule.precedence + 1));
 
         switch (op_type) {
-            .PLUS => self.emitByte(Opcode.ADD),
-            .MINUS => self.emitByte(Opcode.SUBTRACT),
-            .STAR => self.emitByte(Opcode.MULTIPLY),
-            .SLASH => self.emitByte(Opcode.DIVIDE),
+            .PLUS => self.emitByte(.ADD),
+            .MINUS => self.emitByte(.SUBTRACT),
+            .STAR => self.emitByte(.MULTIPLY),
+            .SLASH => self.emitByte(.DIVIDE),
             else => unreachable
         }
     }
 
-    inline fn grouping(self: *Parser) void {
+    pub inline fn grouping(self: *Parser) void {
         self.expression();
-        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.");
+        self.consume(.RIGHT_PAREN, "Expect ')' after expression.");
     }
 };
 
 pub fn compile(source: []u8, chunks: Chunks) bool {
     const scanner = Scanner.init(source);
     var parser = Parser.init(scanner, chunks);
-    // _ = scanner.expression();
-    parser.consume(TokenType.EOF, "Expect end of expression.");
+    parser.advance();
+    parser.expression();
+    parser.consume(.EOF, "Expect end of expression.");
+    parser.endCompiler();
     return !parser.hadError;
 }
+

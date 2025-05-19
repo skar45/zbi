@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const TokenType = enum {
+pub const TokenType = enum(usize) {
   // Single-character tokens.
   LEFT_PAREN, RIGHT_PAREN,
   LEFT_BRACE, RIGHT_BRACE,
