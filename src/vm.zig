@@ -62,6 +62,14 @@ pub const VM = struct {
         _ = try debug.disassembleInstruction(self.chunks, off);
     }
 
+    fn runtimeError(self: *VM, format: []const u8) void {
+        std.debug.print("{s} \n", .{format});
+        const instruction: usize = self.code_ptr - self.chunks.code.items.ptr - 1;
+        const line = self.chunks.lines[instruction];
+        std.debug.print("[line {d}] in script\n", .{line});
+        self.resetStack();
+    }
+
     inline fn binary_op(self: *VM, comptime op: []const u8) void {
         const a = self.pop();
         const b = self.pop();
@@ -94,7 +102,13 @@ pub const VM = struct {
                 .MULTIPLY => self.binary_op("*"),
                 .DIVIDE => self.binary_op("/"),
                 .NEGATE => {
-                    self.push(-self.pop());
+                    switch (self.peek()) {
+                        .number => self.push(-self.pop()),
+                        else => {
+                            self.runtimeError("Operand must be a number.");
+                            return InterpretResult.INTERPRET_RUNTIME_ERROR;
+                        }
+                    }
                 },
                 .RETURN => {
                     try printValue(self.pop());
@@ -106,16 +120,20 @@ pub const VM = struct {
         }
     }
 
-    pub fn resetStack(self: *VM) void {
+    pub inline fn resetStack(self: *VM) void {
         self.stack_ptr = &self.stack;
     }
 
-    pub fn push(self: *VM, value: Value) void {
+    pub inline fn peek(self: *VM, distance: usize) Value {
+        return self.stack_ptr[distance];
+    }
+
+    pub inline fn push(self: *VM, value: Value) void {
         self.stack_ptr[0] = value;
         self.stack_ptr += 1;
     }
 
-    pub fn pop(self: *VM) Value {
+    pub inline fn pop(self: *VM) Value {
         self.stack_ptr -= 1;
         return self.stack_ptr[0];
     }

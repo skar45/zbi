@@ -1,7 +1,7 @@
 const TokenType = @import("scanner.zig").TokenType;
 const Parser = @import("compiler.zig").Parser;
 
-pub const GrammarFn = *const fn (p: * Parser) callconv(.@"inline") void;
+pub const GrammarFn = *const fn (p: * Parser) void;
 
 const grouping = Parser.grouping;
 const binary = Parser.binary;
