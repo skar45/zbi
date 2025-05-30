@@ -65,19 +65,20 @@ pub const VM = struct {
     fn runtimeError(self: *VM, format: []const u8) void {
         std.debug.print("{s} \n", .{format});
         const instruction: usize = self.code_ptr - self.chunks.code.items.ptr - 1;
-        const line = self.chunks.lines[instruction];
+        const line = self.chunks.lines.ptr + instruction;
         std.debug.print("[line {d}] in script\n", .{line});
         self.resetStack();
     }
 
     inline fn binary_op(self: *VM, comptime op: []const u8) void {
-        const a = self.pop();
-        const b = self.pop();
+        // TODO: error if type isn't number
+        const a = self.pop().number;
+        const b = self.pop().number;
         switch (op[0]) {
-            '+' => self.push(a + b),
-            '-' => self.push(a - b),
-            '*' => self.push(a * b),
-            '/' => self.push(a / b),
+            '+' => self.push(Value.setNumber(a + b)),
+            '-' => self.push(Value.setNumber(a - b)),
+            '*' => self.push(Value.setNumber(a * b)),
+            '/' => self.push(Value.setNumber(a / b)),
             else => unreachable
         }
     }
@@ -102,8 +103,11 @@ pub const VM = struct {
                 .MULTIPLY => self.binary_op("*"),
                 .DIVIDE => self.binary_op("/"),
                 .NEGATE => {
-                    switch (self.peek()) {
-                        .number => self.push(-self.pop()),
+                    switch (self.peek(1)) {
+                        .number => {
+                            const num = -self.pop().number;
+                            self.push(Value.setNumber(num));
+                        },
                         else => {
                             self.runtimeError("Operand must be a number.");
                             return InterpretResult.INTERPRET_RUNTIME_ERROR;

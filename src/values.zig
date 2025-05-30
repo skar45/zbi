@@ -31,5 +31,4 @@ pub fn printValue(value: Value) !void {
         .number => |n| try stdout.print("{d} ", .{n}),
         .nil => try stdout.print("nil ", .{})
     }
-    
 }

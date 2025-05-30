@@ -51,26 +51,26 @@ pub fn main() !void {
         // repl()
     }
 
-    var chunks = Chunks.init();
-    var constant = chunks.addConstant(3.4);
-    chunks.writeChunk(Opcode.CONSTANT, 123);
-    chunks.writeChunk(constant, 123);
-
-    constant = chunks.addConstant(1.2);
-    chunks.writeChunk(Opcode.CONSTANT, 123);
-    chunks.writeChunk(constant, 123);
-
-    chunks.writeChunk(Opcode.ADD, 123);
-
-    constant = chunks.addConstant(5.6);
-    chunks.writeChunk(Opcode.CONSTANT, 123);
-    chunks.writeChunk(constant, 123);
-
-    chunks.writeChunk(Opcode.DIVIDE, 123);
-    chunks.writeChunk(Opcode.NEGATE, 123);
-    chunks.writeChunk(Opcode.RETURN, 123);
-    var vm = VM.init(chunks);
-    _ = try vm.run();
+    // var chunks = Chunks.init();
+    // var constant = chunks.addConstant(3.4);
+    // chunks.writeChunk(Opcode.CONSTANT, 123);
+    // chunks.writeChunk(constant, 123);
+// 
+    // constant = chunks.addConstant(1.2);
+    // chunks.writeChunk(Opcode.CONSTANT, 123);
+    // chunks.writeChunk(constant, 123);
+// 
+    // chunks.writeChunk(Opcode.ADD, 123);
+// 
+    // constant = chunks.addConstant(5.6);
+    // chunks.writeChunk(Opcode.CONSTANT, 123);
+    // chunks.writeChunk(constant, 123);
+// 
+    // chunks.writeChunk(Opcode.DIVIDE, 123);
+    // chunks.writeChunk(Opcode.NEGATE, 123);
+    // chunks.writeChunk(Opcode.RETURN, 123);
+    // var vm = VM.init(chunks);
+    // _ = try vm.run();
 }
 
 test "Chunk Test" {
