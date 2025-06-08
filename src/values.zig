@@ -19,7 +19,7 @@ pub const Value = union(enum) {
 
     pub fn setNil() Value {
         return Value {
-            .nil = void
+            .nil = undefined
         };
     }
 };

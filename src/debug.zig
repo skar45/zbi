@@ -16,7 +16,7 @@ fn simpleInstruction(name: []const u8, offset: usize) !usize {
     return offset + 1;
 }
 
-fn constantInstruction(name: []const u8, c: Chunks, offset: usize) !usize {
+fn constantInstruction(name: []const u8, c: *Chunks, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
     const index = @intFromEnum(c.code.items[offset + 1]);
     try stdout.print("{s} {d:4} ", .{name, index});
@@ -26,7 +26,7 @@ fn constantInstruction(name: []const u8, c: Chunks, offset: usize) !usize {
 
 }
 
-pub fn disassembleInstruction(c: Chunks, offset: usize) !usize {
+pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("{d:0>4} ", .{offset});
     if (offset > 0 and c.lines.items[offset] == c.lines.items[offset - 1]) {
@@ -39,6 +39,12 @@ pub fn disassembleInstruction(c: Chunks, offset: usize) !usize {
     return switch (instruction) {
         .RETURN => try simpleInstruction("OP_RETURN", offset),
         .CONSTANT => try constantInstruction("OP_CONSTANT", c, offset),
+        .NIL => try simpleInstruction("OP_NIL", offset),
+        .TRUE => try simpleInstruction("OP_TRUE", offset),
+        .FALSE => try simpleInstruction("OP_FALSE", offset),
+        .EQUAL => try simpleInstruction("OP_EQUAL", offset),
+        .GREATER => try simpleInstruction("OP_GREATER", offset),
+        .LESS => try simpleInstruction("OP_LESS", offset),
         .ADD => try simpleInstruction("OP_ADD", offset),
         .SUBTRACT => try simpleInstruction("OP_SUBTRACT", offset),
         .MULTIPLY => try simpleInstruction("OP_MULTIPLY", offset),
@@ -48,7 +54,7 @@ pub fn disassembleInstruction(c: Chunks, offset: usize) !usize {
     };
 }
 
-pub fn disassembleChunk(c: Chunks, name: []const u8) !void {
+pub fn disassembleChunk(c: *Chunks, name: []const u8) !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("== {s} ==\n", .{name});
 

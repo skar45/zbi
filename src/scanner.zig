@@ -1,8 +1,10 @@
 const std = @import("std");
 
+const ArrayList = std.ArrayList;
+
 pub const TokenType = enum(usize) {
   // Single-character tokens.
-  LEFT_PAREN, RIGHT_PAREN,
+  LEFT_PAREN = 0, RIGHT_PAREN,
   LEFT_BRACE, RIGHT_BRACE,
   COMMA, DOT, MINUS, PLUS,
   SEMICOLON, SLASH, STAR,
@@ -24,7 +26,7 @@ pub const TokenType = enum(usize) {
 
 pub const Token = struct {
     ttype: TokenType,
-    start: []const u8,
+    start: ArrayList(u8),
     line: usize,
 };
 
@@ -33,17 +35,21 @@ pub const Scanner = struct {
     current: []const u8,
     end: usize,
     line: usize,
+    _allocator: std.heap.GeneralPurposeAllocator(.{}),
 
     pub fn init(source: []const u8) Scanner {
+        const allocator = std.heap.GeneralPurposeAllocator(.{}).init;
         return Scanner {
             .start = source,
             .current = source,
             .end = @intFromPtr(source.ptr) + source.len,
-            .line = 1
+            .line = 1,
+            ._allocator = allocator,
         };
     }
 
     inline fn isAtEnd(self: *Scanner) bool {
+        std.debug.print("end {d}\n", .{self.end});
         return @intFromPtr(self.current.ptr) == self.end;
     }
 
@@ -54,7 +60,7 @@ pub const Scanner = struct {
     }
 
     inline fn match(self: *Scanner, expected: u8) bool {
-        if (self.isAtEnd()) return false;
+        // if (self.isAtEnd()) return false;
         if (self.current[0] != expected) return false;
         self.current.ptr += 1;
         return true;
@@ -66,7 +72,7 @@ pub const Scanner = struct {
 
     inline fn peekNext(self: *Scanner) u8 {
         // TODO: fix this
-        if (self.isAtEnd()) return '0';
+        // if (self.isAtEnd()) return 0;
         return self.current[1];
     }
 
@@ -84,7 +90,7 @@ pub const Scanner = struct {
                 },
                 '/' => {
                     if (self.peekNext() == '/') {
-                        while (self.peek() != '\n' and !self.isAtEnd()) _ = self.advance();
+                        while (self.peek() != '\n') _ = self.advance();
                     } else {
                         return;
                     }
@@ -141,38 +147,46 @@ pub const Scanner = struct {
             't' => {
                 if (@intFromPtr(self.current.ptr) - @intFromPtr(self.start.ptr) > 1) {
                     return switch (self.start[1]) {
-                        'h' => self.checkKeyword(2, 2, "is", TokenType.FALSE),
-                        'r' => self.checkKeyword(2, 2, "ue",TokenType.FOR),
+                        'h' => self.checkKeyword(2, 2, "is", TokenType.THIS),
+                        'r' => self.checkKeyword(2, 2, "ue",TokenType.TRUE),
                         else => TokenType.IDENTIFIER
                     };
                 }
                 return TokenType.IDENTIFIER;
             },
-            'v' => self.checkKeyword(1, 2, "ar", TokenType.VAR),
-            'w' => self.checkKeyword(1, 2, "ar", TokenType.WHILE),
+            'v' => self.checkKeyword(1, 3, "ar", TokenType.VAR),
+            'w' => self.checkKeyword(1, 4, "hile", TokenType.WHILE),
             else => TokenType.IDENTIFIER
         };
 
     }
 
     fn makeToken(self: *Scanner, ttype: TokenType) Token {
-        const token_len = self.current.len - self.start.len;
+        const token_len: usize = @intFromPtr(self.current.ptr) - @intFromPtr(self.start.ptr);
+        std.debug.print("ttype {d} \n", .{@intFromEnum(ttype)});
+        var list = ArrayList(u8).initCapacity(self._allocator.allocator(), token_len) catch unreachable;
+        for (self.start[0..token_len]) |v| {
+            list.append(v) catch unreachable;
+        }
         const token = Token {
             .ttype = ttype,
-            .start = self.start[0..token_len],
+            .start = list,
             .line = self.line
         };
         return token;
     }
 
     fn errorToken(self: *Scanner, message: []const u8) Token {
+        var list = ArrayList(u8).initCapacity(self._allocator.allocator(), message.len) catch unreachable;
+        for (message) |v| {
+            list.append(v) catch unreachable;
+        }
         const token = Token {
             .ttype = TokenType.ERROR,
-            .start = message,
+            .start = list,
             .line = self.line
         };
         return token;
-
     }
 
     fn identiferToken(self: *Scanner) Token {
@@ -192,12 +206,11 @@ pub const Scanner = struct {
     }
 
     fn stringLiteral(self: *Scanner) Token {
-        while (self.peek() != '"' and !self.isAtEnd()) {
+        while (self.peek() != '"') {
             if (self.peek() == '\n') self.line += 1;
-            _ = self.advance();
+            const char = self.advance();
+            if (char == 0) return self.errorToken("Unterminated string");
         }
-
-        if (self.isAtEnd()) return self.errorToken("Unterminated string");
         _ = self.advance();
         return self.makeToken(TokenType.STRING);
     }
@@ -205,8 +218,9 @@ pub const Scanner = struct {
     pub fn scanToken(self: *Scanner) Token {
         self.skipWhiteSpace();
         self.start = self.current;
-        if (self.isAtEnd()) return self.makeToken(TokenType.EOF);
         const c = self.advance();
+        const character = [_]u8{c};
+        std.debug.print("Processing character: {s} value: {d} \n", .{character, character});
         if (isAlpha(c)) return self.identiferToken();
         if (isDigit(c)) return self.numericLiteral();
         return switch (c) {
@@ -226,8 +240,17 @@ pub const Scanner = struct {
             '<' => self.makeToken(if (self.match('=')) TokenType.LESS_EQUAL else TokenType.LESS),
             '>' => self.makeToken(if (self.match('=')) TokenType.GREATER_EQUAL else TokenType.GREATER),
             '"' => self.stringLiteral(),
+            0 => self.makeToken(TokenType.EOF),
             else => self.errorToken("Unexpected character")
         };
+    }
+
+    pub fn deinit(self: *Scanner) void {
+        const check = self._allocator.deinit();
+        switch(check) {
+            .leak => std.debug.print("[Scanner] memory leak \n", .{}),
+            .ok => {}
+        }
     }
 };
 

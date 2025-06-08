@@ -11,14 +11,19 @@ const Chunks = c.Chunks;
 pub fn repl() !void {
     const stdout = std.io.getStdOut().writer();
     const stdin = std.io.getStdIn().reader();
-    const line: [1024]u8 = {};
+    var line: [1024]u8 = [_]u8{0} ** 1024;
     while (true) {
         try stdout.print("> ", .{});
-        try stdin.read(line);
+        _ = try stdin.read(&line);
         if (line.len <= 0) {
             break;
         }
-        interpret(line);
+        const result = interpret(&line);
+        switch (result) {
+            .INTERPRET_COMPILE_ERROR => std.debug.print("compile error", .{}),
+            .INTERPRET_OK => std.debug.print("", .{}),
+            .INTERPRET_RUNTIME_ERROR => std.debug.print("runtime error", .{})
+        }
     }
 }
 
@@ -48,29 +53,8 @@ pub fn main() !void {
     if (file_path) |path| {
         try runFile(path);
     } else {
-        // repl()
+        try repl();
     }
-
-    // var chunks = Chunks.init();
-    // var constant = chunks.addConstant(3.4);
-    // chunks.writeChunk(Opcode.CONSTANT, 123);
-    // chunks.writeChunk(constant, 123);
-// 
-    // constant = chunks.addConstant(1.2);
-    // chunks.writeChunk(Opcode.CONSTANT, 123);
-    // chunks.writeChunk(constant, 123);
-// 
-    // chunks.writeChunk(Opcode.ADD, 123);
-// 
-    // constant = chunks.addConstant(5.6);
-    // chunks.writeChunk(Opcode.CONSTANT, 123);
-    // chunks.writeChunk(constant, 123);
-// 
-    // chunks.writeChunk(Opcode.DIVIDE, 123);
-    // chunks.writeChunk(Opcode.NEGATE, 123);
-    // chunks.writeChunk(Opcode.RETURN, 123);
-    // var vm = VM.init(chunks);
-    // _ = try vm.run();
 }
 
 test "Chunk Test" {
