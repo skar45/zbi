@@ -24,7 +24,6 @@ pub fn interpret(source: []u8) InterpretResult {
     if (!compiler.compile(source, &chunks)) {
         return InterpretResult.INTERPRET_COMPILE_ERROR;
     }
-    std.debug.print("lines length {d} \n", .{chunks.lines.items.len});
     var vm = VM.init(&chunks);
     return vm.run() catch {
         std.debug.print("vm error", .{});
@@ -42,19 +41,22 @@ pub const VM = struct {
         return VM {
             .chunks = chunks,
             .code_ptr = chunks.code.items.ptr,
-            .stack = undefined,
+            .stack = [_]Value{Value.setNil()} ** MAX_STACK,
             .stack_ptr = undefined,
         };
     }
 
     fn debug_vm(self: *VM) !void {
-        var slot = @intFromPtr(&self.stack);
-        const stack_top = @intFromPtr(self.stack_ptr);
-        while (slot < stack_top) {
-            std.debug.print("[ ", .{});
-            printValue(self.stack[0]) catch unreachable;
-            std.debug.print(" ]", .{});
-            slot += 8;
+        for (self.stack) |v| {
+            switch (v) {
+                .nil => break,
+                else => {
+                    std.debug.print("[ ", .{});
+                    printValue(v) catch unreachable;
+                    std.debug.print(" ]", .{});
+                }
+            }
+
         }
         std.debug.print("\n", .{});
         const off: usize = @intFromPtr(self.code_ptr) - @intFromPtr(self.chunks.code.items.ptr);

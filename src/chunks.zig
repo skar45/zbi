@@ -47,7 +47,6 @@ pub const Chunks = struct {
 
     pub fn writeChunk(self: *Chunks,  code: Opcode, line: usize) void {
         self.lines.append(line) catch |e| allocatorError(e);
-        std.debug.print("write chunk added total length: {d} \n", .{self.lines.items.len});
         self.code.append(code) catch |e| allocatorError(e);
     }
 

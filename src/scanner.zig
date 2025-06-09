@@ -163,7 +163,6 @@ pub const Scanner = struct {
 
     fn makeToken(self: *Scanner, ttype: TokenType) Token {
         const token_len: usize = @intFromPtr(self.current.ptr) - @intFromPtr(self.start.ptr);
-        std.debug.print("ttype {d} \n", .{@intFromEnum(ttype)});
         var list = ArrayList(u8).initCapacity(self._allocator.allocator(), token_len) catch unreachable;
         for (self.start[0..token_len]) |v| {
             list.append(v) catch unreachable;
@@ -219,8 +218,6 @@ pub const Scanner = struct {
         self.skipWhiteSpace();
         self.start = self.current;
         const c = self.advance();
-        const character = [_]u8{c};
-        std.debug.print("Processing character: {s} value: {d} \n", .{character, character});
         if (isAlpha(c)) return self.identiferToken();
         if (isDigit(c)) return self.numericLiteral();
         return switch (c) {

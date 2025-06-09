@@ -20,9 +20,9 @@ pub fn repl() !void {
         }
         const result = interpret(&line);
         switch (result) {
-            .INTERPRET_COMPILE_ERROR => std.debug.print("compile error", .{}),
+            .INTERPRET_COMPILE_ERROR => std.debug.print("compile error \n", .{}),
             .INTERPRET_OK => std.debug.print("", .{}),
-            .INTERPRET_RUNTIME_ERROR => std.debug.print("runtime error", .{})
+            .INTERPRET_RUNTIME_ERROR => std.debug.print("runtime error \n", .{})
         }
     }
 }

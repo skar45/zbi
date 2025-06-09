@@ -9,8 +9,8 @@ const unary = Parser.unary;
 const number = Parser.number;
 const literal = Parser.literal;
 
-pub const Precedence = enum(usize) {
-    NONE,
+pub const Precedence = enum(u8) {
+    NONE = 0,
     ASSIGNMENT,
     OR,
     AND,
@@ -32,14 +32,14 @@ pub const ParseRule = struct {
 pub const rules = blk: {
     var r: [40]ParseRule = undefined;
     const setRule = struct {
-        fn sr(cr: *[40]ParseRule, t_type: TokenType, pre: ?GrammarFn, suf: ?GrammarFn, prec: Precedence) void {
+        fn lambda(cr: *[40]ParseRule, t_type: TokenType, pre: ?GrammarFn, suf: ?GrammarFn, prec: Precedence) void {
             cr[@intFromEnum(t_type)] = ParseRule {
                 .prefix = pre,
                 .infix = suf,
                 .precedence = prec,
             };
         }
-    }.sr;
+    }.lambda;
 
     setRule(&r, .LEFT_PAREN, grouping, null, .NONE);
     setRule(&r, .RIGHT_PAREN, null, null, .NONE);
@@ -47,7 +47,7 @@ pub const rules = blk: {
     setRule(&r, .RIGHT_BRACE, null, null, .NONE);
     setRule(&r, .COMMA, null, null, .NONE);
     setRule(&r, .DOT, null, null, .NONE);
-    setRule(&r, .MINUS, unary, binary, .NONE);
+    setRule(&r, .MINUS, unary, binary, .TERM);
     setRule(&r, .PLUS, null, binary, .TERM);
     setRule(&r, .SEMICOLON, null, null, .NONE);
     setRule(&r, .SLASH, null, binary, .FACTOR);
