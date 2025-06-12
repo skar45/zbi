@@ -27,7 +27,7 @@ const STACK_SIZE = 256;
 pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
     var chunks = Chunks.init();
     defer chunks.deinit();
-    if (!compiler.compile(source, &chunks)) {
+    if (!compiler.compile(source, &chunks, allocator)) {
         return InterpretResult.INTERPRET_COMPILE_ERROR;
     }
     var vm = VM.init(&chunks, allocator);
@@ -39,7 +39,7 @@ pub const VM = struct {
     code_ptr: [*]OpCode,
     stack: [STACK_SIZE]Value,
     stack_idx: usize,
-    _allocator: Allocator,
+    _allocator: *const Allocator,
 
     pub fn init(chunks: *Chunks, allocator: *const Allocator) VM {
         return VM {
@@ -47,7 +47,7 @@ pub const VM = struct {
             .code_ptr = chunks.code.items.ptr,
             .stack = [_]Value{Value.setNil()} ** STACK_SIZE,
             .stack_idx = 0,
-            ._allocator = allocator.*,
+            ._allocator = allocator,
         };
     }
 
@@ -103,6 +103,12 @@ pub const VM = struct {
                     .number => |s| s == v,
                     else => false
                 };
+            },
+            .string => |v| {
+                return switch(b) {
+                    .string => |s| v.compare(s.str),
+                    else => false
+                };
             }
         };
     }
@@ -110,6 +116,23 @@ pub const VM = struct {
     inline fn binaryOp(self: *VM, comptime op: []const u8) !void {
         const b: f64 = switch (self.pop()) {
             .number => |v| v,
+            .string => |v| {
+                if (op[0] != '+') return error.InvalidArithmeticOp;
+                try switch (try self.peek(1)) {
+                    .string => {
+                        const str = self.pop();
+                        switch (str) {
+                            .string => |s| {
+                                const value = try Value.concatString(s.str, v.str, self._allocator);
+                                self.push(value);
+                                return;
+                            },
+                            else => return error.InvalidArithmeticOp
+                        }
+                    },
+                    else => return error.InvalidArithmeticOp
+                };
+            },
             else => return error.InvalidArithmeticOp
         };
         const a: f64 = switch (self.pop()) {

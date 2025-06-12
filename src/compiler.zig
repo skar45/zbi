@@ -5,6 +5,7 @@ const parserule = @import("parserule.zig");
 const debug = @import("debug.zig");
 const values = @import("values.zig");
 
+const Allocator = std.mem.Allocator;
 const Scanner = lexer.Scanner;
 const TokenType = lexer.TokenType;
 const Token = lexer.Token;
@@ -24,8 +25,9 @@ pub const Parser = struct {
     scanner: Scanner,
     hadError: bool,
     panicMode: bool,
+    _allocator: *const Allocator,
 
-    pub fn init(scanner: Scanner, chunks: *Chunks) Parser {
+    pub fn init(scanner: Scanner, chunks: *Chunks, allocator: *const Allocator) Parser {
         var mut_scanner = scanner;
         const token = mut_scanner.scanToken();
         const token_buf: [2]Token = [2]Token{token, token};
@@ -34,7 +36,8 @@ pub const Parser = struct {
             .token_buf = token_buf,
             .scanner = mut_scanner,
             .hadError = false,
-            .panicMode = false
+            .panicMode = false,
+            ._allocator = allocator
         };
     }
 
@@ -142,10 +145,19 @@ pub const Parser = struct {
 
     pub fn number(self: *Parser) void {
         const num = std.fmt.parseFloat(f64, self.previous().start.items) catch {
-            std.debug.print("Could not parse float!", .{});
+            std.debug.print("Could not parse float! \n", .{});
             std.process.exit(64);
         };
         const value = Value.setNumber(num);
+        self.emitConstant(value);
+    }
+
+    pub fn string(self: *Parser) void {
+        const str = self.previous().start.items;
+        const value = Value.setString(str[1..(str.len - 1)], self._allocator) catch {
+            std.debug.print("Could not allocate string: {s} \n", .{str});
+            std.process.exit(64);
+        };
         self.emitConstant(value);
     }
 
@@ -196,10 +208,10 @@ pub const Parser = struct {
     }
 };
 
-pub fn compile(source: []u8, chunks: *Chunks) bool {
+pub fn compile(source: []u8, chunks: *Chunks, allocator: *const Allocator) bool {
     var scanner = Scanner.init(source);
     defer scanner.deinit();
-    var parser = Parser.init(scanner, chunks);
+    var parser = Parser.init(scanner, chunks, allocator);
     parser.expression();
     parser.consume(.EOF, "Expect end of expression.");
     parser.endCompiler();

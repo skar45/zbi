@@ -7,6 +7,7 @@ const grouping = Parser.grouping;
 const binary = Parser.binary;
 const unary = Parser.unary;
 const number = Parser.number;
+const string = Parser.string;
 const literal = Parser.literal;
 
 pub const Precedence = enum(u8) {
@@ -67,7 +68,7 @@ pub const rules = blk: {
     setRule(&r, .LESS, null, binary, .COMPARISON);
     setRule(&r, .LESS_EQUAL, null, binary, .COMPARISON);
     setRule(&r, .IDENTIFIER, null, null, .NONE);
-    setRule(&r, .STRING, null, null, .NONE);
+    setRule(&r, .STRING, string, null, .NONE);
     setRule(&r, .NUMBER, number, null, .NONE);
     setRule(&r, .AND, null, null, .NONE);
     setRule(&r, .CLASS, null, null, .NONE);
