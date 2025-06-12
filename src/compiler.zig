@@ -150,7 +150,6 @@ pub const Parser = struct {
     }
 
     pub fn unary(self: *Parser) void {
-        std.debug.print("hit unary \n", .{});
         const op_type = self.previous().ttype;
         self.parsePrecedence(@intFromEnum(Precedence.UNARY));
 
@@ -162,7 +161,6 @@ pub const Parser = struct {
     }
 
     pub fn binary(self: *Parser) void {
-        std.debug.print("hit binary \n", .{});
         const op_type = self.previous().ttype;
         const rule = getRule(op_type);
         const precedence: usize = @intFromEnum(rule.precedence) + 1;

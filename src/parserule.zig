@@ -32,7 +32,13 @@ pub const ParseRule = struct {
 pub const rules = blk: {
     var r: [40]ParseRule = undefined;
     const setRule = struct {
-        fn lambda(cr: *[40]ParseRule, t_type: TokenType, pre: ?GrammarFn, suf: ?GrammarFn, prec: Precedence) void {
+        fn lambda(
+            cr: *[40]ParseRule,
+            t_type: TokenType,
+            pre: ?GrammarFn,
+            suf: ?GrammarFn,
+            prec: Precedence) void
+        {
             cr[@intFromEnum(t_type)] = ParseRule {
                 .prefix = pre,
                 .infix = suf,

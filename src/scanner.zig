@@ -238,7 +238,11 @@ pub const Scanner = struct {
             '>' => self.makeToken(if (self.match('=')) TokenType.GREATER_EQUAL else TokenType.GREATER),
             '"' => self.stringLiteral(),
             0 => self.makeToken(TokenType.EOF),
-            else => self.errorToken("Unexpected character")
+            else => {
+                var buf: [32]u8 = undefined;
+                const msg = std.fmt.bufPrint(&buf, "Unexpected character: {d}", .{c}) catch unreachable;
+                return self.errorToken(msg);
+            }
         };
     }
 

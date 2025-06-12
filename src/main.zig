@@ -3,12 +3,13 @@ const c = @import("chunks.zig");
 const debug = @import("debug.zig");
 const v = @import("vm.zig");
 
+const Allocator = std.mem.Allocator;
 const VM = v.VM;
 const interpret = v.interpret;
 const Opcode = c.Opcode;
 const Chunks = c.Chunks;
 
-pub fn repl() !void {
+pub fn repl(allocator: *const Allocator) !void {
     const stdout = std.io.getStdOut().writer();
     const stdin = std.io.getStdIn().reader();
     var line: [1024]u8 = [_]u8{0} ** 1024;
@@ -18,7 +19,7 @@ pub fn repl() !void {
         if (line.len <= 0) {
             break;
         }
-        const result = interpret(&line);
+        const result = interpret(&line, allocator);
         switch (result) {
             .INTERPRET_COMPILE_ERROR => std.debug.print("compile error \n", .{}),
             .INTERPRET_OK => std.debug.print("", .{}),
@@ -27,19 +28,24 @@ pub fn repl() !void {
     }
 }
 
-pub fn runFile(path: []const u8) !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-    const file = try std.fs.cwd().readFileAlloc(allocator, path, 4096 * 10);
-    _ = interpret(file);
+pub fn runFile(path: []const u8, allocator: *const Allocator) !void {
+    const file = try std.fs.cwd().readFileAlloc(allocator.*, path, 4096 * 10);
+    const result = interpret(file, allocator);
+    switch (result) {
+        .INTERPRET_COMPILE_ERROR => std.debug.print("compile error \n", .{}),
+        .INTERPRET_OK => std.debug.print("", .{}),
+        .INTERPRET_RUNTIME_ERROR => std.debug.print("runtime error \n", .{})
+    }
 }
 
 
 pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    // defer arena.deinit();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+    // const allocator = arena.allocator();
     var args_iter = try std.process.argsWithAllocator(allocator);
     if (args_iter.skip() == false) {
         std.debug.print("Usage: zbi [path]\n", .{});
@@ -51,9 +57,9 @@ pub fn main() !void {
         std.process.exit(64);
     }
     if (file_path) |path| {
-        try runFile(path);
+        try runFile(path, &allocator);
     } else {
-        try repl();
+        try repl(&allocator);
     }
 }
 

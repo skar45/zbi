@@ -5,6 +5,7 @@ const debug = @import("debug.zig");
 const values = @import("values.zig");
 const compiler = @import("compiler.zig");
 
+const Allocator = std.mem.Allocator;
 const printValue = values.printValue;
 const Value = values.Value;
 const Chunks = c.Chunks;
@@ -16,33 +17,37 @@ const InterpretResult = enum {
     INTERPRET_RUNTIME_ERROR,
 };
 
-const MAX_STACK = 256;
+const VmError = error{
+    InvalidArithmeticOp,
+    OperandMustBeNumber
+};
 
-pub fn interpret(source: []u8) InterpretResult {
+const STACK_SIZE = 256;
+
+pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
     var chunks = Chunks.init();
     defer chunks.deinit();
     if (!compiler.compile(source, &chunks)) {
         return InterpretResult.INTERPRET_COMPILE_ERROR;
     }
-    var vm = VM.init(&chunks);
-    return vm.run() catch {
-        std.debug.print("vm error", .{});
-        return InterpretResult.INTERPRET_RUNTIME_ERROR;
-    };
+    var vm = VM.init(&chunks, allocator);
+    return vm.run();
 }
 
 pub const VM = struct {
     chunks: *Chunks,
     code_ptr: [*]OpCode,
-    stack: [MAX_STACK]Value,
-    stack_ptr: [*]Value,
+    stack: [STACK_SIZE]Value,
+    stack_idx: usize,
+    _allocator: Allocator,
 
-    pub fn init(chunks: *Chunks) VM {
+    pub fn init(chunks: *Chunks, allocator: *const Allocator) VM {
         return VM {
             .chunks = chunks,
             .code_ptr = chunks.code.items.ptr,
-            .stack = [_]Value{Value.setNil()} ** MAX_STACK,
-            .stack_ptr = undefined,
+            .stack = [_]Value{Value.setNil()} ** STACK_SIZE,
+            .stack_idx = 0,
+            ._allocator = allocator.*,
         };
     }
 
@@ -102,14 +107,14 @@ pub const VM = struct {
         };
     }
 
-    inline fn binaryOp(self: *VM, comptime op: []const u8) void {
-        const a: f64 = switch (self.pop()) {
-            .number => |v| v,
-            else => return self.runtimeError("can only do arithmetic operations on numbers")
-        };
+    inline fn binaryOp(self: *VM, comptime op: []const u8) !void {
         const b: f64 = switch (self.pop()) {
             .number => |v| v,
-            else => return self.runtimeError("can only do arithmentic operations on numbers")
+            else => return error.InvalidArithmeticOp
+        };
+        const a: f64 = switch (self.pop()) {
+            .number => |v| v,
+            else => return error.InvalidArithmeticOp
         };
         switch (op[0]) {
             '+' => self.push(Value.setNumber(a + b)),
@@ -122,13 +127,11 @@ pub const VM = struct {
         }
     }
 
-    pub fn run(self: *VM) !InterpretResult {
-        self.stack_ptr = &self.stack;
+    fn run_vm(self: *VM) !void {
         while (true) {
             if (comptime debug.ENABLE_LOGGING) {
                 try self.debug_vm();
             }
-            const stdout = std.io.getStdOut().writer();
             const instruction = self.code_ptr[0];
             self.code_ptr += 1;
             switch (instruction) {
@@ -145,50 +148,60 @@ pub const VM = struct {
                     const b = self.pop();
                     self.push(Value.setBool(valuesEqual(a, b)));
                 },
-                .GREATER => self.binaryOp(">"),
-                .LESS => self.binaryOp("<"),
-                .ADD => self.binaryOp("+"),
-                .SUBTRACT => self.binaryOp("-"),
-                .MULTIPLY => self.binaryOp("*"),
-                .DIVIDE => self.binaryOp("/"),
+                .GREATER => try self.binaryOp(">"),
+                .LESS => try self.binaryOp("<"),
+                .ADD => try self.binaryOp("+"),
+                .SUBTRACT => try self.binaryOp("-"),
+                .MULTIPLY => try self.binaryOp("*"),
+                .DIVIDE => try self.binaryOp("/"),
                 .NOT => self.push(Value.setBool(VM.isFalsy(self.pop()))),
                 .NEGATE => {
-                    switch (self.peek(1)) {
+                    try switch (try self.peek(1)) {
                         .number => {
                             const num = -self.pop().number;
                             self.push(Value.setNumber(num));
                         },
-                        else => {
-                            self.runtimeError("Operand must be a number.");
-                            return InterpretResult.INTERPRET_RUNTIME_ERROR;
-                        }
-                    }
+                        else => error.OperandMustBeNumber
+                    };
                 },
-                .RETURN => {
-                    try printValue(self.pop());
-                    try stdout.print("\n", .{});
-                    return InterpretResult.INTERPRET_OK;
-                },
+                .RETURN => return,
                 _ => continue
             }
         }
+
+    }
+
+    pub fn run(self: *VM) InterpretResult {
+        const stdout = std.io.getStdOut().writer();
+        self.run_vm() catch |err| {
+            switch (err) {
+                error.OperandMustBeNumber => self.runtimeError("Operand must be a number."),
+                error.InvalidArithmeticOp => self.runtimeError("Can only do arithmetic operations on numbers."),
+                else => self.runtimeError("Unknown error.")
+            }
+            return InterpretResult.INTERPRET_RUNTIME_ERROR;
+        };
+        printValue(self.pop()) catch unreachable;
+        stdout.print("\n", .{}) catch unreachable;
+        return InterpretResult.INTERPRET_OK;
     }
 
     inline fn resetStack(self: *VM) void {
-        self.stack_ptr = &self.stack;
+        self.stack_idx = 0;
+        self.stack = [_]Value{Value.setNil()} ** STACK_SIZE;
     }
 
-    inline fn peek(self: *VM, distance: usize) Value {
-        return self.stack_ptr[distance];
+    inline fn peek(self: *VM, distance: usize) !Value {
+        return self.stack[self.stack_idx - distance];
     }
 
     inline fn push(self: *VM, value: Value) void {
-        self.stack_ptr[0] = value;
-        self.stack_ptr += 1;
+        self.stack[self.stack_idx] = value;
+        self.stack_idx += 1;
     }
 
     inline fn pop(self: *VM) Value {
-        self.stack_ptr -= 1;
-        return self.stack_ptr[0];
+        self.stack_idx -= 1;
+        return self.stack[self.stack_idx];
     }
 };
