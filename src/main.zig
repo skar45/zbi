@@ -40,12 +40,9 @@ pub fn runFile(path: []const u8, allocator: *const Allocator) !void {
 
 
 pub fn main() !void {
-    // var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    // defer arena.deinit();
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    // const allocator = arena.allocator();
     var args_iter = try std.process.argsWithAllocator(allocator);
     if (args_iter.skip() == false) {
         std.debug.print("Usage: zbi [path]\n", .{});

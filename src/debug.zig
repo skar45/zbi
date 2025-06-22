@@ -38,6 +38,7 @@ pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
     const instruction: Opcode = c.code.items[offset];
     return switch (instruction) {
         .RETURN => try simpleInstruction("OP_RETURN", offset),
+        .PRINT => try simpleInstruction("OP_PRINT", offset),
         .CONSTANT => try constantInstruction("OP_CONSTANT", c, offset),
         .NIL => try simpleInstruction("OP_NIL", offset),
         .TRUE => try simpleInstruction("OP_TRUE", offset),
@@ -50,6 +51,9 @@ pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
         .MULTIPLY => try simpleInstruction("OP_MULTIPLY", offset),
         .DIVIDE => try simpleInstruction("OP_DIVIDE", offset),
         .NEGATE => try simpleInstruction("OP_NEGATE", offset),
+        .POP => try simpleInstruction("OP_POP", offset),
+        .DEFINE_GLOBAL => try constantInstruction("OP_DEFINE_GLOBAL", c, offset),
+        .GET_GLOBAL => try constantInstruction("OP_GET_GLOBAL", c, offset),
         else => error.UnknownOpcode
     };
 }

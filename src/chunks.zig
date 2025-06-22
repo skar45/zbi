@@ -1,8 +1,13 @@
 const std = @import("std");
 const Value = @import("values.zig").Value;
 
+const ArrayList = std.ArrayList;
+const Allocator = std.mem.Allocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
+
 pub const Opcode = enum(u8){
     RETURN,
+    PRINT,
     CONSTANT,
     NIL,
     TRUE,
@@ -16,14 +21,17 @@ pub const Opcode = enum(u8){
     DIVIDE,
     NEGATE,
     NOT,
+    POP,
+    DEFINE_GLOBAL,
+    GET_GLOBAL,
     _
 };
 
 pub const Chunks = struct {
-    code: std.ArrayList(Opcode),
-    values: std.ArrayList(Value),
-    lines: std.ArrayList(usize),
-    _arena:  std.heap.ArenaAllocator,
+    code: ArrayList(Opcode),
+    values: ArrayList(Value),
+    lines: ArrayList(usize),
+    _arena: ArenaAllocator,
 
     inline fn allocatorError(err: std.mem.Allocator.Error) void {
         std.debug.print("{}", .{err});
@@ -31,11 +39,11 @@ pub const Chunks = struct {
     }
 
     pub fn init() Chunks {
-        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        var arena = ArenaAllocator.init(std.heap.page_allocator);
         const allocator = arena.allocator();
-        const code = std.ArrayList(Opcode).initCapacity(allocator, 2048) catch |e| allocatorError(e);
-        const values_list = std.ArrayList(Value).initCapacity(allocator, 1024) catch |e| allocatorError(e);
-        const lines = std.ArrayList(usize).initCapacity(allocator, 256) catch |e| allocatorError(e);
+        const code = ArrayList(Opcode).initCapacity(allocator, 2048) catch |e| allocatorError(e);
+        const values_list = ArrayList(Value).initCapacity(allocator, 1024) catch |e| allocatorError(e);
+        const lines = ArrayList(usize).initCapacity(allocator, 256) catch |e| allocatorError(e);
 
         return Chunks {
             .code = code,

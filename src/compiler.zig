@@ -71,6 +71,14 @@ pub const Parser = struct {
         self.errorAt(self.current(), message);
     }
 
+    inline fn match_prev(self: *Parser, ttype: TokenType) bool {
+        return if (self.previous().ttype == ttype) true else false ;
+    }
+
+    inline fn match(self: *Parser, ttype: TokenType) bool {
+        return if (self.current().ttype == ttype) true else false ;
+    } 
+
     pub fn advance(self: *Parser) void {
         self.token_buf[0] = self.token_buf[1];
         self.token_buf[1] = self.scanner.scanToken(); 
@@ -117,6 +125,19 @@ pub const Parser = struct {
         self.emitBytes(Opcode.CONSTANT, self.makeConstant(value));
     }
 
+    fn synchronize(self: *Parser) void {
+        self.panicMode = false;
+
+        while (!self.match(TokenType.EOF)) {
+            if (self.match_prev(TokenType.SEMICOLON)) return;
+            switch (self.current().ttype) {
+                .CLASS, .FUN, .VAR, .FOR,
+                .IF, .WHILE, .PRINT, .RETURN => return,
+                _ => self.advance()
+            }
+        }
+    }
+
     inline fn getRule(t_type: TokenType) *const ParseRule {
         return &rules[@intFromEnum(t_type)];
     }
@@ -139,8 +160,70 @@ pub const Parser = struct {
         }
     }
 
+    inline fn identifierConstant(self: *Parser, name: *const Token) Opcode {
+        const str = Value.setString(name.start.items, self._allocator);
+        return self.makeConstant(str);
+    }
+
+    inline fn parseVariable(self: *Parser, msg: []const u8) Opcode {
+        self.consume(.IDENTIFIER, msg);
+        return self.identifierConstant(self.previous());
+    }
+
+    inline fn defineVariable(self: *Parser, global: Opcode) void {
+        self.emitBytes(.DEFINE_GLOBAL, global);
+    }
+
     inline fn expression(self: *Parser) void {
         self.parsePrecedence(@intFromEnum(Precedence.ASSIGNMENT));
+    }
+
+    inline fn expressionStmt(self: *Parser) void {
+        self.expression();
+        self.consume(.SEMICOLON, "Expected ';' after expression");
+        self.emitByte(.POP);
+    }
+
+    inline fn printStmt(self: *Parser) void {
+        self.expression();
+        self.consume(.SEMICOLON, "Expected ';' after print expression");
+        self.emitByte(.PRINT);
+    }
+
+    inline fn statement(self: *Parser) void {
+        if (self.match(.PRINT)) {
+            self.advance();
+            self.printStmt();
+        }
+    }
+
+    inline fn varDeclaration(self: *Parser) void {
+        const global = self.parseVariable("Expect variable name");
+        if (self.match(.EQUAL)) {
+            self.expression();
+        } else {
+            self.emitByte(.NIL);
+        }
+        self.consume(.SEMICOLON, "Expected ';' after var declaration");
+        self.defineVariable(global);
+    }
+
+    inline fn declaration(self: *Parser) void {
+        if (self.match(.VAR)) {
+            self.advance();
+            self.varDeclaration();
+        } else {
+            self.statement();
+        }
+    }
+
+    inline fn namedVariable(self: *Parser, name: *const Token) void {
+        const arg = self.identifierConstant(name);
+        self.emitBytes(.GET_GLOBAL, arg);
+    }
+
+    pub fn variable(self: *Parser) void {
+        self.namedVariable(self.previous());
     }
 
     pub fn number(self: *Parser) void {
@@ -154,10 +237,7 @@ pub const Parser = struct {
 
     pub fn string(self: *Parser) void {
         const str = self.previous().start.items;
-        const value = Value.setString(str[1..(str.len - 1)], self._allocator) catch {
-            std.debug.print("Could not allocate string: {s} \n", .{str});
-            std.process.exit(64);
-        };
+        const value = Value.setString(str[1..(str.len - 1)], self._allocator);
         self.emitConstant(value);
     }
 
@@ -212,8 +292,10 @@ pub fn compile(source: []u8, chunks: *Chunks, allocator: *const Allocator) bool 
     var scanner = Scanner.init(source);
     defer scanner.deinit();
     var parser = Parser.init(scanner, chunks, allocator);
-    parser.expression();
-    parser.consume(.EOF, "Expect end of expression.");
+    while (!parser.match(TokenType.EOF)) {
+        parser.declaration();
+    }
+    parser.consume(TokenType.EOF, "Expected end of file");
     parser.endCompiler();
     return !parser.hadError;
 }

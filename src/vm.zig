@@ -11,6 +11,26 @@ const Value = values.Value;
 const Chunks = c.Chunks;
 const OpCode = c.Opcode;
 
+const Context = struct {
+    pub fn hash(_: *const Context, k: []const u8) u32 {
+        var h: u32 = 2166136261;
+        for (k) |s| {
+            h ^= s;
+            h *= 16777619;
+        }
+        return h;
+    }
+
+    pub fn eql(_: *const Context, key1: []const u8, key2: []const u8, _: usize) bool {
+        for (key1, 0..) |k, i| {
+            if (key2[i] != k) return false;
+        }
+        return true;
+    }
+};
+
+const GlobalDeclMap = std.ArrayHashMap([]const u8, Value, Context, true);
+
 const InterpretResult = enum {
     INTERPRET_OK,
     INTERPRET_COMPILE_ERROR,
@@ -25,6 +45,7 @@ const VmError = error{
 const STACK_SIZE = 256;
 
 pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
+    // @compileLog("size of 'Value'", @sizeOf(Value));
     var chunks = Chunks.init();
     defer chunks.deinit();
     if (!compiler.compile(source, &chunks, allocator)) {
@@ -39,16 +60,23 @@ pub const VM = struct {
     code_ptr: [*]OpCode,
     stack: [STACK_SIZE]Value,
     stack_idx: usize,
+    globals: GlobalDeclMap,
     _allocator: *const Allocator,
 
     pub fn init(chunks: *Chunks, allocator: *const Allocator) VM {
+        const globals = GlobalDeclMap.init(allocator.*);
         return VM {
             .chunks = chunks,
             .code_ptr = chunks.code.items.ptr,
             .stack = [_]Value{Value.setNil()} ** STACK_SIZE,
             .stack_idx = 0,
+            .globals = globals,
             ._allocator = allocator,
         };
+    }
+
+    pub fn deinit(self: *VM) void {
+        self.globals.deinit();
     }
 
     fn debug_vm(self: *VM) !void {
@@ -109,7 +137,8 @@ pub const VM = struct {
                     .string => |s| v.compare(s.str),
                     else => false
                 };
-            }
+            },
+            .table => false
         };
     }
 
@@ -123,7 +152,7 @@ pub const VM = struct {
                         const str = self.pop();
                         switch (str) {
                             .string => |s| {
-                                const value = try Value.concatString(s.str, v.str, self._allocator);
+                                const value = Value.concatString(s.str, v.str, s._allocator);
                                 self.push(value);
                                 return;
                             },
@@ -187,7 +216,44 @@ pub const VM = struct {
                         else => error.OperandMustBeNumber
                     };
                 },
-                .RETURN => return,
+                .PRINT => {
+                    const stdout = std.io.getStdOut();
+                    try printValue(self.pop());
+                    _ = try stdout.writer().write("\n");
+                },
+                .DEFINE_GLOBAL => {
+                    const i = @intFromEnum(self.code_ptr[0]);
+                    const name = self.chunks.values.items[i];
+                    switch (name) {
+                        .string => |s| {
+                            try self.globals.put(s.str, try self.peek(0));
+                        },
+                        else => self.runtimeError("Variable names must be string")
+                    }
+                },
+                .GET_GLOBAL => {
+                    const i = @intFromEnum(self.code_ptr[0]);
+                    const name = self.chunks.values.items[i];
+                    switch (name) {
+                        .string => |s| {
+                            if (self.globals.get(s.str)) |val| {
+                                self.push(val);
+                            } else {
+                                var buf: [256]u8 = undefined;
+                                _ = std.fmt.bufPrint(buf[0..], "Variable not defined: {s}", .{s.str}) catch {
+                                    std.debug.print("Could not format error variable", .{});
+                                    std.process.exit(64);
+                                };
+                                self.runtimeError(&buf);
+                            }
+                        },
+                        else => self.runtimeError("Variable names must be string")
+                    }
+                },
+                .POP => {
+                    _ = self.pop();
+                },
+                .RETURN => continue,
                 _ => continue
             }
         }

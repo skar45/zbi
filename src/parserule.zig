@@ -3,6 +3,7 @@ const Parser = @import("compiler.zig").Parser;
 
 pub const GrammarFn = *const fn (p: * Parser) void;
 
+const variable = Parser.variable;
 const grouping = Parser.grouping;
 const binary = Parser.binary;
 const unary = Parser.unary;
@@ -67,7 +68,7 @@ pub const rules = blk: {
     setRule(&r, .GREATER_EQUAL, null, binary, .COMPARISON);
     setRule(&r, .LESS, null, binary, .COMPARISON);
     setRule(&r, .LESS_EQUAL, null, binary, .COMPARISON);
-    setRule(&r, .IDENTIFIER, null, null, .NONE);
+    setRule(&r, .IDENTIFIER, variable, null, .NONE);
     setRule(&r, .STRING, string, null, .NONE);
     setRule(&r, .NUMBER, number, null, .NONE);
     setRule(&r, .AND, null, null, .NONE);

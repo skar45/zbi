@@ -1,11 +1,14 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+const ArrayHashMap = std.ArrayHashMap;
 
 pub const Value = union(enum) {
     boolean: bool,
     number: f64,
     string: StringObj,
+    table: Table,
     nil,
 
     pub fn setBool(boolean: bool) Value {
@@ -20,15 +23,21 @@ pub const Value = union(enum) {
         };
     }
 
-    pub fn setString(str: []const u8, allocator: *const Allocator) !Value {
+    pub fn setString(str: []const u8, allocator: *const Allocator) Value {
         return Value {
-            .string = try StringObj.init(str, allocator)
+            .string = StringObj.init(str, allocator)
         };
     }
 
-    pub fn concatString(str1: []const u8, str2: []const u8, allocator: *const Allocator) !Value {
+    pub fn initTable(allocator: *const Allocator) Value {
         return Value {
-            .string = try StringObj.concat(str1, str2, allocator)
+            .table = Table.init(allocator)
+        };
+    }
+
+    pub fn concatString(str1: []const u8, str2: []const u8, allocator: *const Allocator) Value {
+        return Value {
+            .string = StringObj.concat(str1, str2, allocator)
         };
     }
 
@@ -39,12 +48,16 @@ pub const Value = union(enum) {
     }
 };
 
+
 pub const StringObj = struct {
     str: []const u8,
     _allocator: *const Allocator,
 
-    pub fn init(str: []const u8, allocator: *const Allocator) !StringObj {
-        const result = try allocator.alloc(u8, str.len);
+    pub fn init(str: []const u8, allocator: *const Allocator) StringObj {
+        const result = allocator.alloc(u8, str.len) catch {
+            std.debug.print("Allocator OOM", .{});
+            std.process.exit(64);
+        };
         @memcpy(result,  str);
 
         return StringObj {
@@ -53,8 +66,11 @@ pub const StringObj = struct {
         };
     }
 
-    pub fn concat(str1: []const u8, str2: []const u8, allocator: *const Allocator) !StringObj {
-        const result = try allocator.alloc(u8, str1.len + str2.len);
+    pub fn concat(str1: []const u8, str2: []const u8, allocator: *const Allocator) StringObj {
+        const result = allocator.alloc(u8, str1.len + str2.len) catch {
+            std.debug.print("Allocator OOM", .{});
+            std.process.exit(64);
+        };
         @memcpy(result[0..str1.len],  str1);
         @memcpy(result[str1.len..],  str2);
 
@@ -64,6 +80,7 @@ pub const StringObj = struct {
         };
     }
 
+    // TODO use for native string methods
     pub fn append(self: *const StringObj, val: []const u8) !void {
         const result: []u8 = try self._allocator.realloc(self.str, val.len + self.len);
         @memcpy(result[(self.str.len - 1)..result.len], val);
@@ -79,10 +96,142 @@ pub const StringObj = struct {
     }
 
     pub fn deinit(self: *const StringObj) void {
-        self._allocator.free(self.str_ptr);
+        self._allocator.free(self.str);
         self.str = undefined;
     }
 };
+
+pub const Table = struct {
+    map: ArrayHashMap(Value, Value, TableHash, true),
+    count: usize,
+
+    pub fn init(allocator: *const Allocator) Table {
+        return Table {
+            .map = ArrayHashMap(Value, Value, TableHash, true).init(allocator.*),
+            .count = 0
+        };
+    }
+
+    pub fn deinit(self: *Table) void {
+        self.map.deinit();
+    }
+
+    pub fn insert(self: *Table, k: Value, v: Value) void {
+        switch (k) {
+            // TODO return error
+            .table => unreachable,
+            else => self.map.put(k, v) catch unreachable
+        }
+    }
+
+    pub fn get(self: *const Table, k: Value) Value {
+        if (self.map.get(k)) |v| {
+            return v;
+        } else {
+            return Value.setNil();
+        }
+    }
+};
+
+pub const TableHash = struct {
+    pub fn hash(_: *const TableHash, k: Value) u32 {
+        const key: []const u8 = switch(k) {
+            .boolean => |b| if (b == true) "true" else "false",
+            .number => |n| blk: {
+                var buf: [64]u8 = undefined;
+                _ = std.fmt.bufPrint(buf[0..], "{d}", .{n}) catch unreachable;
+                break :blk &buf;
+            },
+            .string => |s| s.str,
+            .table => unreachable,
+            .nil => "nil"
+        };
+
+        var h: u32 = 2166136261;
+        for (key) |s| {
+            h ^= s;
+            h *= 16777619;
+        }
+        return h;
+    }
+
+    pub fn eql(_: *const TableHash, key1: Value, key2: Value, _: usize) bool {
+        return switch (key1) {
+            .boolean => |b1| {
+                return switch (key2) {
+                    .boolean => |b2| b1 == b2,
+                    else => false,
+                };
+            },
+            .number => |n1| {
+                return switch (key2) {
+                    .number => |n2| n1 == n2,
+                    else => false
+                };
+            },
+            .string => |s1| {
+                return switch (key2) {
+                    .string => |s2| {
+                        for (s1.str, 0..) |s, i| {
+                            if (s != s2.str[i]) return false;
+                        }
+                        return true;
+                    },
+                    else => false
+                };
+            },
+            .table => unreachable,
+            .nil => {
+                return switch (key2) {
+                    .nil => true,
+                    else => false
+                };
+            }
+        };
+    }
+
+};
+
+// pub const HashBucket = struct {
+//     value: Value,
+//     next: ?*HashBucket
+// };
+// 
+// pub const HashMapObj = struct {
+//     buckets: ArrayList(HashBucket),
+//     count: usize,
+//     _arena_allocator: *const Allocator,
+// 
+//     pub fn init(alloc: *const Allocator) void {
+//         return HashMapObj {
+//             .buckets = ArrayList(HashBucket).initCapacity(alloc, 2048) catch unreachable,
+//             .count = 0,
+//             ._arena_allocator = alloc
+//         };
+//     }
+// 
+//     fn get_hash(key: []const u8) usize {
+//          var hash: usize = 2166136261;
+//          for (key) |k| {
+//              hash ^= k;
+//              hash *= 16777619;
+//          }
+//          return hash;
+//     }
+// 
+//     pub fn insert(self: *const HashMapObj, key: []const u8, value: Value) void {
+//         const hash = get_hash(key);
+//         if ((self.count + 1) > (self.buckets.capacity * 0.75)) {
+//             self.buckets.resize(self.buckets.capacity * 2);
+//         }
+//         const index: usize = hash % self.buckets.capacity;
+//     }
+// 
+//     pub fn deinit(self: *const HashMapObj) void {
+//         self._arena_allocator.free(self.buckets);
+//     }
+// };
+
 
 pub fn printValue(value: Value) !void {
     const stdout = std.io.getStdOut().writer();
@@ -90,6 +239,20 @@ pub fn printValue(value: Value) !void {
         .boolean => |b| try stdout.print("{} ", .{b}),
         .number => |n| try stdout.print("{d} ", .{n}),
         .string => |s| try stdout.print("{s} ", .{s.str}),
+        .table => |t| {
+            const keys = t.map.keys();
+            for (keys) |k| {
+                switch (k) {
+                    .string => |s| {
+                        try stdout.print("[{s}]: ", .{s.str});
+                        const val = t.get(k);
+                        try printValue(val);
+                        try stdout.print("\n", .{});
+                    },
+                    else => unreachable
+                }
+            }
+        },
         .nil => try stdout.print("nil ", .{})
     }
 }
