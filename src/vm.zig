@@ -39,7 +39,9 @@ const InterpretResult = enum {
 
 const VmError = error{
     InvalidArithmeticOp,
-    OperandMustBeNumber
+    OperandMustBeNumber,
+    VarNameMustBeString,
+    VarUndefined
 };
 
 const STACK_SIZE = 256;
@@ -57,7 +59,8 @@ pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
 
 pub const VM = struct {
     chunks: *Chunks,
-    code_ptr: [*]OpCode,
+    code: []OpCode,
+    code_idx: usize,
     stack: [STACK_SIZE]Value,
     stack_idx: usize,
     globals: GlobalDeclMap,
@@ -67,7 +70,8 @@ pub const VM = struct {
         const globals = GlobalDeclMap.init(allocator.*);
         return VM {
             .chunks = chunks,
-            .code_ptr = chunks.code.items.ptr,
+            .code = chunks.code.items,
+            .code_idx = 0,
             .stack = [_]Value{Value.setNil()} ** STACK_SIZE,
             .stack_idx = 0,
             .globals = globals,
@@ -92,13 +96,13 @@ pub const VM = struct {
 
         }
         std.debug.print("\n", .{});
-        const off: usize = @intFromPtr(self.code_ptr) - @intFromPtr(self.chunks.code.items.ptr);
+        const off: usize = self.code_idx;
         _ = try debug.disassembleInstruction(self.chunks, off);
     }
 
     fn runtimeError(self: *VM, format: []const u8) void {
         std.debug.print("{s} \n", .{format});
-        const instruction: usize  = @intFromPtr(self.code_ptr) - @intFromPtr(self.chunks.code.items.ptr) - 1;
+        const instruction: usize  = self.code_idx;
         const line: usize = self.chunks.lines.items[instruction];
         std.debug.print("[line {d}] in script\n", .{line});
         self.resetStack();
@@ -180,16 +184,16 @@ pub const VM = struct {
     }
 
     fn run_vm(self: *VM) !void {
-        while (true) {
+        while (self.code.len > self.code_idx) {
             if (comptime debug.ENABLE_LOGGING) {
                 try self.debug_vm();
             }
-            const instruction = self.code_ptr[0];
-            self.code_ptr += 1;
+            const instruction = self.code[self.code_idx];
+            self.code_idx += 1;
             switch (instruction) {
                 .CONSTANT => {
-                    const i = @intFromEnum(self.code_ptr[0]);
-                    self.code_ptr += 1;
+                    const i = @intFromEnum(self.code[self.code_idx]);
+                    self.code_idx += 1;
                     self.push(self.chunks.values.items[i]);
                 },
                 .NIL => self.push(Value.setNil()),
@@ -208,13 +212,13 @@ pub const VM = struct {
                 .DIVIDE => try self.binaryOp("/"),
                 .NOT => self.push(Value.setBool(VM.isFalsy(self.pop()))),
                 .NEGATE => {
-                    try switch (try self.peek(1)) {
+                    switch (try self.peek(1)) {
                         .number => {
                             const num = -self.pop().number;
                             self.push(Value.setNumber(num));
                         },
-                        else => error.OperandMustBeNumber
-                    };
+                        else => return error.OperandMustBeNumber
+                    }
                 },
                 .PRINT => {
                     const stdout = std.io.getStdOut();
@@ -222,17 +226,19 @@ pub const VM = struct {
                     _ = try stdout.writer().write("\n");
                 },
                 .DEFINE_GLOBAL => {
-                    const i = @intFromEnum(self.code_ptr[0]);
+                    const i = @intFromEnum(self.code[self.code_idx]);
+                    self.code_idx += 1;
                     const name = self.chunks.values.items[i];
                     switch (name) {
                         .string => |s| {
                             try self.globals.put(s.str, try self.peek(0));
                         },
-                        else => self.runtimeError("Variable names must be string")
+                        else => return error.VarNameMustBeString
                     }
                 },
                 .GET_GLOBAL => {
-                    const i = @intFromEnum(self.code_ptr[0]);
+                    const i = @intFromEnum(self.code[self.code_idx]);
+                    self.code_idx += 1;
                     const name = self.chunks.values.items[i];
                     switch (name) {
                         .string => |s| {
@@ -245,33 +251,54 @@ pub const VM = struct {
                                     std.process.exit(64);
                                 };
                                 self.runtimeError(&buf);
+                                return error.VarUndefined;
                             }
                         },
-                        else => self.runtimeError("Variable names must be string")
+                        else => return error.VarNameMustBeString
+                    }
+                },
+                .SET_GLOBAL => {
+                    const i = @intFromEnum(self.code[self.code_idx]);
+                    self.code_idx += 1;
+                    const name = self.chunks.values.items[i];
+                    switch (name) {
+                        .string => |s| {
+                            self.globals.put(s.str, try self.peek(0)) catch {
+                                var buf: [256]u8 = undefined;
+                                _ = std.fmt.bufPrint(buf[0..], "Variable not defined: {s}", .{s.str}) catch {
+                                    std.debug.print("Could not format error variable", .{});
+                                    std.process.exit(64);
+                                };
+                                self.runtimeError(&buf);
+                                return error.VarUndefined;
+                            };
+                        },
+                        else => {
+                            return error.VarNameMustBeString;
+                        }
                     }
                 },
                 .POP => {
                     _ = self.pop();
                 },
                 .RETURN => continue,
-                _ => continue
+                _ => break
             }
         }
 
     }
 
     pub fn run(self: *VM) InterpretResult {
-        const stdout = std.io.getStdOut().writer();
         self.run_vm() catch |err| {
             switch (err) {
                 error.OperandMustBeNumber => self.runtimeError("Operand must be a number."),
                 error.InvalidArithmeticOp => self.runtimeError("Can only do arithmetic operations on numbers."),
+                error.VarNameMustBeString => self.runtimeError("Variable names must be string"),
+                error.VarUndefined => {},
                 else => self.runtimeError("Unknown error.")
             }
             return InterpretResult.INTERPRET_RUNTIME_ERROR;
         };
-        printValue(self.pop()) catch unreachable;
-        stdout.print("\n", .{}) catch unreachable;
         return InterpretResult.INTERPRET_OK;
     }
 

@@ -115,7 +115,8 @@ pub const Scanner = struct {
         length: usize,
         rest: []const u8,
         ttype: TokenType) TokenType {
-        if (std.mem.eql(u8, self.start[start..length], rest)){
+        const end = start + length;
+        if (std.mem.eql(u8, self.start[start..end], rest)){
             return ttype;
         } else {
             return TokenType.IDENTIFIER;

@@ -145,7 +145,7 @@ pub const Parser = struct {
     inline fn parsePrecedence(self: *Parser, precIndex: usize) void {
         self.advance();
         const prefix_rule = getRule(self.previous().ttype).prefix orelse {
-            self.errorAtPrevious("Expect expression");
+            self.errorAtPrevious("Expected expression");
             return;
         };
         prefix_rule(self);
@@ -153,7 +153,7 @@ pub const Parser = struct {
         while (precIndex <= @intFromEnum(getRule(self.current().ttype).precedence)) {
             self.advance();
             const infix_rule = getRule(self.previous().ttype).infix orelse {
-                self.errorAtPrevious("Expect expression");
+                self.errorAtPrevious("Expected expression");
                 return;
             };
             infix_rule(self);
@@ -194,6 +194,8 @@ pub const Parser = struct {
         if (self.match(.PRINT)) {
             self.advance();
             self.printStmt();
+        } else {
+            self.advance();
         }
     }
 
@@ -209,6 +211,7 @@ pub const Parser = struct {
     }
 
     inline fn declaration(self: *Parser) void {
+        std.debug.print("decl \n", .{});
         if (self.match(.VAR)) {
             self.advance();
             self.varDeclaration();
@@ -219,7 +222,12 @@ pub const Parser = struct {
 
     inline fn namedVariable(self: *Parser, name: *const Token) void {
         const arg = self.identifierConstant(name);
-        self.emitBytes(.GET_GLOBAL, arg);
+        if (self.match(.EQUAL)) {
+            self.advance();
+            self.emitBytes(.SET_GLOBAL, arg);
+        } else {
+            self.emitBytes(.GET_GLOBAL, arg);
+        }
     }
 
     pub fn variable(self: *Parser) void {

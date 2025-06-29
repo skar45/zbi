@@ -7,7 +7,6 @@ const Opcode = chunks.Opcode;
 const Chunks = chunks.Chunks;
 
 
-
 pub const ENABLE_LOGGING = true;
 
 fn simpleInstruction(name: []const u8, offset: usize) !usize {
@@ -54,6 +53,7 @@ pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
         .POP => try simpleInstruction("OP_POP", offset),
         .DEFINE_GLOBAL => try constantInstruction("OP_DEFINE_GLOBAL", c, offset),
         .GET_GLOBAL => try constantInstruction("OP_GET_GLOBAL", c, offset),
+        .SET_GLOBAL => try constantInstruction("OP_SET_GLOBAL", c, offset),
         else => error.UnknownOpcode
     };
 }

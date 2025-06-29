@@ -1,8 +1,6 @@
 const TokenType = @import("scanner.zig").TokenType;
 const Parser = @import("compiler.zig").Parser;
 
-pub const GrammarFn = *const fn (p: * Parser) void;
-
 const variable = Parser.variable;
 const grouping = Parser.grouping;
 const binary = Parser.binary;
@@ -24,6 +22,8 @@ pub const Precedence = enum(u8) {
     CALL,
     PRIMARY
 };
+
+const GrammarFn = *const fn (p: * Parser) void;
 
 pub const ParseRule = struct {
     prefix: ?GrammarFn,
