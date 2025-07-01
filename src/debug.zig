@@ -15,10 +15,17 @@ fn simpleInstruction(name: []const u8, offset: usize) !usize {
     return offset + 1;
 }
 
+fn byteInstruction(name: []const u8, c: *Chunks, offset: usize) !usize {
+    const stdout = std.io.getStdOut().writer();
+    const index = @intFromEnum(c.code.items[offset + 1]);
+    try stdout.print("{s} {d:0>3}\n", .{name, index});
+    return offset + 2;
+}
+
 fn constantInstruction(name: []const u8, c: *Chunks, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
     const index = @intFromEnum(c.code.items[offset + 1]);
-    try stdout.print("{s} {d:4} ", .{name, index});
+    try stdout.print("{s} {d:0>3} ", .{name, index});
     try values.printValue(c.values.items[index]);
     try stdout.print("\n", .{});
     return offset + 2;
@@ -51,6 +58,8 @@ pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
         .DIVIDE => try simpleInstruction("OP_DIVIDE", offset),
         .NEGATE => try simpleInstruction("OP_NEGATE", offset),
         .POP => try simpleInstruction("OP_POP", offset),
+        .GET_LOCAL => try byteInstruction("OP_GET_LOCAL", c, offset),
+        .SET_LOCAL => try byteInstruction("OP_SET_LOCAL", c, offset),
         .DEFINE_GLOBAL => try constantInstruction("OP_DEFINE_GLOBAL", c, offset),
         .GET_GLOBAL => try constantInstruction("OP_GET_GLOBAL", c, offset),
         .SET_GLOBAL => try constantInstruction("OP_SET_GLOBAL", c, offset),

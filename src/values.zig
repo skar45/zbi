@@ -10,6 +10,13 @@ pub const Value = union(enum) {
     string: StringObj,
     table: Table,
     nil,
+    void,
+
+    pub fn setVoid() Value {
+        return Value {
+            .void = undefined
+        };
+    }
 
     pub fn setBool(boolean: bool) Value {
         return Value {
@@ -144,6 +151,7 @@ pub const TableHash = struct {
             },
             .string => |s| s.str,
             .table => unreachable,
+            .void => unreachable,
             .nil => "nil"
         };
 
@@ -181,6 +189,7 @@ pub const TableHash = struct {
                 };
             },
             .table => unreachable,
+            .void => unreachable,
             .nil => {
                 return switch (key2) {
                     .nil => true,
@@ -253,6 +262,7 @@ pub fn printValue(value: Value) !void {
                 }
             }
         },
-        .nil => try stdout.print("nil ", .{})
+        .nil => try stdout.print("nil ", .{}),
+        .void => {}
     }
 }

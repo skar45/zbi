@@ -17,17 +17,38 @@ const Value = values.Value;
 const LOGGING  = debug.ENABLE_LOGGING;
 const rules = parserule.rules;
 
+const MAX_LOCALS = 256;
 
+pub const Local = struct {
+    name: Token,
+    depth: isize,
+};
+
+pub const Compiler = struct {
+    locals: [MAX_LOCALS]Local,
+    local_count: u32,
+    scope_depth: u32,
+
+    pub fn init() Compiler {
+        return Compiler {
+            .locals = undefined,
+            .local_count = 0,
+            .scope_depth = 0
+        };
+    }
+};
 
 pub const Parser = struct {
     compilingChunk: *Chunks,
     token_buf: [2]Token,
     scanner: Scanner,
+    compiler: *Compiler,
     hadError: bool,
     panicMode: bool,
+    canAssign: bool,
     _allocator: *const Allocator,
 
-    pub fn init(scanner: Scanner, chunks: *Chunks, allocator: *const Allocator) Parser {
+    pub fn init(scanner: Scanner, compiler: *Compiler, chunks: *Chunks, allocator: *const Allocator) Parser {
         var mut_scanner = scanner;
         const token = mut_scanner.scanToken();
         const token_buf: [2]Token = [2]Token{token, token};
@@ -35,8 +56,10 @@ pub const Parser = struct {
             .compilingChunk = chunks,
             .token_buf = token_buf,
             .scanner = mut_scanner,
+            .compiler = compiler,
             .hadError = false,
             .panicMode = false,
+            .canAssign = false,
             ._allocator = allocator
         };
     }
@@ -116,6 +139,21 @@ pub const Parser = struct {
         }
     }
 
+    inline fn beginScope(self: *Parser) void {
+        self.compiler.scope_depth += 1;
+    }
+
+    inline fn endScope(self: *Parser) void {
+        self.compiler.scope_depth -= 1;
+        const local_count = self.compiler.local_count;
+        const scope_depth = self.compiler.scope_depth;
+        const locals = &self.compiler.locals;
+        while (local_count > 0 and locals[local_count - 1].depth > scope_depth) {
+            self.emitByte(.POP);
+            self.compiler.local_count -= 1;
+        }
+    }
+
     inline fn makeConstant(self: *Parser, value: Value) Opcode {
         const constant = self.compilingChunk.addConstant(value);
         return constant;
@@ -144,20 +182,44 @@ pub const Parser = struct {
 
     inline fn parsePrecedence(self: *Parser, precIndex: usize) void {
         self.advance();
-        const prefix_rule = getRule(self.previous().ttype).prefix orelse {
+        const rule = getRule(self.previous().ttype);
+        const prefix_fn = rule.prefix orelse {
             self.errorAtPrevious("Expected expression");
             return;
         };
-        prefix_rule(self);
+        self.canAssign = @intFromEnum(rule.precedence) <= @intFromEnum(Precedence.ASSIGNMENT);
+        prefix_fn(self);
 
         while (precIndex <= @intFromEnum(getRule(self.current().ttype).precedence)) {
             self.advance();
-            const infix_rule = getRule(self.previous().ttype).infix orelse {
+            const infix_fn = getRule(self.previous().ttype).infix orelse {
                 self.errorAtPrevious("Expected expression");
                 return;
             };
-            infix_rule(self);
+            infix_fn(self);
         }
+    }
+
+    inline fn compareIdentifier(name1: *const Token, name2: *const Token) bool {
+        if (name1.start.items.len != name2.start.items.len) return false;
+        for (name1.start.items, 0..name1.start.items.len) |n, i| {
+            if (n != name2.start.items[i]) return false;
+        }
+        return true;
+    }
+
+    inline fn resolveLocal(self: *Parser, name: *const Token) ?usize {
+        const local_count = self.compiler.local_count;
+        for (0..local_count) |i| {
+            const local = self.compiler.locals[local_count - 1 - i];
+            if (compareIdentifier(name, &local.name)) {
+                if (local.depth == -1) {
+                    self.errorAtCurrent("Can't read variables in its own initializer");
+                }
+                return i;
+            }
+        }
+        return null;
     }
 
     inline fn identifierConstant(self: *Parser, name: *const Token) Opcode {
@@ -165,12 +227,55 @@ pub const Parser = struct {
         return self.makeConstant(str);
     }
 
+    inline fn addLocal(self: *Parser, token: *const Token) void {
+        if (self.compiler.local_count >= MAX_LOCALS) {
+            self.errorAtCurrent("Local variables exceed the allotted size");
+            return;
+        }
+        var local = self.compiler.locals[self.compiler.local_count];
+        self.compiler.local_count += 1;
+        local.name = token.*;
+        local.depth = -1;
+    }
+
+    inline fn declareVariable(self: *Parser) void {
+        if (self.compiler.scope_depth == 0) return;
+        const name = self.previous();
+        const local_count = self.compiler.local_count;
+        for (0..local_count) |i| {
+            const local = self.compiler.locals[local_count - 1 - i];
+            if (local.depth != -1 and local.depth < self.compiler.scope_depth) break;
+
+            if (!compareIdentifier(&local.name, name)) {
+                self.errorAtCurrent("Variable name already exsists in the current scope");
+            }
+        }
+        self.addLocal(name);
+    }
+
+    fn block(self: *Parser) void {
+        while (!self.match(.RIGHT_BRACE) and !self.match(.EOF)) {
+            self.declaration();
+        }
+        self.consume(.RIGHT_BRACE, "Expected '}' after block");
+    }
+
+    inline fn markInitialized(self: *Parser) void {
+        self.compiler.locals[self.compiler.local_count - 1].depth = self.compiler.scope_depth;
+    }
+
     inline fn parseVariable(self: *Parser, msg: []const u8) Opcode {
         self.consume(.IDENTIFIER, msg);
+        self.declareVariable();
+        if (self.compiler.scope_depth > 0) return Opcode.RETURN;
         return self.identifierConstant(self.previous());
     }
 
     inline fn defineVariable(self: *Parser, global: Opcode) void {
+        if (self.compiler.scope_depth > 0) {
+            self.markInitialized();
+            return;
+        }
         self.emitBytes(.DEFINE_GLOBAL, global);
     }
 
@@ -194,14 +299,19 @@ pub const Parser = struct {
         if (self.match(.PRINT)) {
             self.advance();
             self.printStmt();
-        } else {
+        } else if (self.match(.LEFT_BRACE)) {
             self.advance();
+            self.beginScope();
+            self.block();
+            self.endScope();
+        } else {
+            self.expressionStmt();
         }
     }
 
     inline fn varDeclaration(self: *Parser) void {
         const global = self.parseVariable("Expect variable name");
-        if (self.match(.EQUAL)) {
+        if (self.match(.EQUAL) and self.canAssign) {
             self.expression();
         } else {
             self.emitByte(.NIL);
@@ -211,7 +321,6 @@ pub const Parser = struct {
     }
 
     inline fn declaration(self: *Parser) void {
-        std.debug.print("decl \n", .{});
         if (self.match(.VAR)) {
             self.advance();
             self.varDeclaration();
@@ -221,12 +330,23 @@ pub const Parser = struct {
     }
 
     inline fn namedVariable(self: *Parser, name: *const Token) void {
-        const arg = self.identifierConstant(name);
-        if (self.match(.EQUAL)) {
-            self.advance();
-            self.emitBytes(.SET_GLOBAL, arg);
+        var getOp: Opcode = undefined;
+        var setOp: Opcode = undefined;
+        var arg: Opcode = undefined;
+        if (self.resolveLocal(name)) |v| {
+            arg = @enumFromInt(v);
+            getOp = .GET_LOCAL;
+            setOp = .SET_LOCAL;
         } else {
-            self.emitBytes(.GET_GLOBAL, arg);
+            arg = self.identifierConstant(name);
+            getOp = .GET_GLOBAL;
+            setOp = .SET_GLOBAL;
+        }
+        if (self.canAssign and self.match(.EQUAL)) {
+            self.advance();
+            self.emitBytes(setOp, arg);
+        } else {
+            self.emitBytes(getOp, arg);
         }
     }
 
@@ -236,7 +356,7 @@ pub const Parser = struct {
 
     pub fn number(self: *Parser) void {
         const num = std.fmt.parseFloat(f64, self.previous().start.items) catch {
-            std.debug.print("Could not parse float! \n", .{});
+            self.errorAt(self.previous(), "Could not parse float! \n");
             std.process.exit(64);
         };
         const value = Value.setNumber(num);
@@ -299,7 +419,8 @@ pub const Parser = struct {
 pub fn compile(source: []u8, chunks: *Chunks, allocator: *const Allocator) bool {
     var scanner = Scanner.init(source);
     defer scanner.deinit();
-    var parser = Parser.init(scanner, chunks, allocator);
+    var compiler = Compiler.init();
+    var parser = Parser.init(scanner, &compiler, chunks, allocator);
     while (!parser.match(TokenType.EOF)) {
         parser.declaration();
     }

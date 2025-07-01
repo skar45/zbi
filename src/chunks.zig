@@ -5,7 +5,7 @@ const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
-pub const Opcode = enum(u8){
+pub const Opcode = enum(usize){
     RETURN,
     PRINT,
     CONSTANT,
@@ -23,6 +23,8 @@ pub const Opcode = enum(u8){
     NOT,
     POP,
     DEFINE_GLOBAL,
+    GET_LOCAL,
+    SET_LOCAL,
     GET_GLOBAL,
     SET_GLOBAL,
     _

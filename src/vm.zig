@@ -72,7 +72,7 @@ pub const VM = struct {
             .chunks = chunks,
             .code = chunks.code.items,
             .code_idx = 0,
-            .stack = [_]Value{Value.setNil()} ** STACK_SIZE,
+            .stack = [_]Value{Value.setVoid()} ** STACK_SIZE,
             .stack_idx = 0,
             .globals = globals,
             ._allocator = allocator,
@@ -86,7 +86,7 @@ pub const VM = struct {
     fn debug_vm(self: *VM) !void {
         for (self.stack) |v| {
             switch (v) {
-                .nil => break,
+                .void => break,
                 else => {
                     std.debug.print("[ ", .{});
                     printValue(v) catch unreachable;
@@ -142,7 +142,7 @@ pub const VM = struct {
                     else => false
                 };
             },
-            .table => false
+            else => false
         };
     }
 
@@ -183,6 +183,12 @@ pub const VM = struct {
         }
     }
 
+    inline fn read_val_from_chunk(self: *VM) Value {
+        const i = @intFromEnum(self.code[self.code_idx]);
+        self.code_idx += 1;
+        return self.chunks.values.items[i];
+    }
+
     fn run_vm(self: *VM) !void {
         while (self.code.len > self.code_idx) {
             if (comptime debug.ENABLE_LOGGING) {
@@ -192,9 +198,8 @@ pub const VM = struct {
             self.code_idx += 1;
             switch (instruction) {
                 .CONSTANT => {
-                    const i = @intFromEnum(self.code[self.code_idx]);
-                    self.code_idx += 1;
-                    self.push(self.chunks.values.items[i]);
+                    const val = self.read_val_from_chunk();
+                    self.push(val);
                 },
                 .NIL => self.push(Value.setNil()),
                 .TRUE => self.push(Value.setBool(true)),
@@ -226,9 +231,7 @@ pub const VM = struct {
                     _ = try stdout.writer().write("\n");
                 },
                 .DEFINE_GLOBAL => {
-                    const i = @intFromEnum(self.code[self.code_idx]);
-                    self.code_idx += 1;
-                    const name = self.chunks.values.items[i];
+                    const name = self.read_val_from_chunk();
                     switch (name) {
                         .string => |s| {
                             try self.globals.put(s.str, try self.peek(0));
@@ -236,10 +239,17 @@ pub const VM = struct {
                         else => return error.VarNameMustBeString
                     }
                 },
-                .GET_GLOBAL => {
+                .GET_LOCAL => {
+                    const name = self.read_val_from_chunk();
+                    self.push(name);
+                },
+                .SET_LOCAL => {
                     const i = @intFromEnum(self.code[self.code_idx]);
                     self.code_idx += 1;
-                    const name = self.chunks.values.items[i];
+                    self.stack[i] = try self.peek(0);
+                },
+                .GET_GLOBAL => {
+                    const name = self.read_val_from_chunk();
                     switch (name) {
                         .string => |s| {
                             if (self.globals.get(s.str)) |val| {
@@ -258,9 +268,7 @@ pub const VM = struct {
                     }
                 },
                 .SET_GLOBAL => {
-                    const i = @intFromEnum(self.code[self.code_idx]);
-                    self.code_idx += 1;
-                    const name = self.chunks.values.items[i];
+                    const name = self.read_val_from_chunk();
                     switch (name) {
                         .string => |s| {
                             self.globals.put(s.str, try self.peek(0)) catch {
@@ -304,7 +312,7 @@ pub const VM = struct {
 
     inline fn resetStack(self: *VM) void {
         self.stack_idx = 0;
-        self.stack = [_]Value{Value.setNil()} ** STACK_SIZE;
+        self.stack = [_]Value{Value.setVoid()} ** STACK_SIZE;
     }
 
     inline fn peek(self: *VM, distance: usize) !Value {
@@ -318,6 +326,8 @@ pub const VM = struct {
 
     inline fn pop(self: *VM) Value {
         self.stack_idx -= 1;
-        return self.stack[self.stack_idx];
+        const value = self.stack[self.stack_idx];
+        self.stack[self.stack_idx] = Value.setVoid();
+        return value;
     }
 };

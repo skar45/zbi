@@ -49,7 +49,6 @@ pub const Scanner = struct {
     }
 
     inline fn isAtEnd(self: *Scanner) bool {
-        std.debug.print("end {d}\n", .{self.end});
         return @intFromPtr(self.current.ptr) == self.end;
     }
 
