@@ -117,7 +117,7 @@ pub const Parser = struct {
         }
     }
 
-    fn emitByte(self: *Parser, byte: Opcode) void {
+    inline fn emitByte(self: *Parser, byte: Opcode) void {
         self.compilingChunk.writeChunk(byte, self.previous().line);
     }
 
@@ -126,8 +126,34 @@ pub const Parser = struct {
         self.emitByte(byte2);
     }
 
+    inline fn emitJump(self: *Parser, instruction: Opcode) usize {
+        self.emitByte(instruction);
+        self.emitByte(@enumFromInt(0xFF));
+        self.emitByte(@enumFromInt(0xFF));
+        return self.compilingChunk.code.items.len - 2;
+    }
+
     inline fn emitReturn(self: *Parser) void {
         self.emitByte(Opcode.RETURN);
+    }
+
+    inline fn makeConstant(self: *Parser, value: Value) Opcode {
+        const constant = self.compilingChunk.addConstant(value);
+        return constant;
+    }
+
+    inline fn emitConstant(self: *Parser, value: Value) void {
+        self.emitBytes(Opcode.CONSTANT, self.makeConstant(value));
+    }
+
+    inline fn patchJump(self: *Parser, offset: usize) void {
+        const jump = self.compilingChunk.code.items.len - offset - 2;
+        if (jump > (1 << 16 - 1) or jump < 0) {
+            self.errorAtCurrent("Jump error");
+        }
+
+        self.compilingChunk.code.items[offset] = @enumFromInt((jump >> 8) & 0xFF);
+        self.compilingChunk.code.items[offset + 1] = @enumFromInt(jump & 0xFF);
     }
 
     pub inline fn endCompiler(self: *Parser) void {
@@ -152,15 +178,6 @@ pub const Parser = struct {
             self.emitByte(.POP);
             self.compiler.local_count -= 1;
         }
-    }
-
-    inline fn makeConstant(self: *Parser, value: Value) Opcode {
-        const constant = self.compilingChunk.addConstant(value);
-        return constant;
-    }
-
-    inline fn emitConstant(self: *Parser, value: Value) void {
-        self.emitBytes(Opcode.CONSTANT, self.makeConstant(value));
     }
 
     fn synchronize(self: *Parser) void {
@@ -283,29 +300,65 @@ pub const Parser = struct {
         self.parsePrecedence(@intFromEnum(Precedence.ASSIGNMENT));
     }
 
-    inline fn expressionStmt(self: *Parser) void {
+    fn expressionStmt(self: *Parser) void {
         self.expression();
         self.consume(.SEMICOLON, "Expected ';' after expression");
         self.emitByte(.POP);
     }
 
-    inline fn printStmt(self: *Parser) void {
+    fn ifStatement(self: *Parser) void {
+        self.consume(.LEFT_PAREN, "Expected '(' after 'if'");
+        self.expression();
+        self.consume(.RIGHT_PAREN, "Expected ')' after condition");
+
+        const then_jump = self.emitJump(.JUMP_IF_FALSE);
+        self.emitByte(.POP);
+        self.statement();
+        const else_jump = self.emitJump(.JUMP);
+        self.patchJump(then_jump);
+        self.emitByte(.POP);
+        if (self.match(.ELSE)) {
+            self.advance();
+            self.statement();
+        }
+        self.patchJump(else_jump);
+    }
+
+    fn printStmt(self: *Parser) void {
         self.expression();
         self.consume(.SEMICOLON, "Expected ';' after print expression");
         self.emitByte(.PRINT);
     }
 
-    inline fn statement(self: *Parser) void {
-        if (self.match(.PRINT)) {
-            self.advance();
-            self.printStmt();
-        } else if (self.match(.LEFT_BRACE)) {
-            self.advance();
-            self.beginScope();
-            self.block();
-            self.endScope();
-        } else {
-            self.expressionStmt();
+    fn whileStmt(self: *Parser) void {
+        self.consume(.LEFT_PAREN, "Expected '(' after 'while'");
+        self.expression();
+        self.consume(.RIGHT_PAREN, "Expected ')' after condition");
+
+        const exit_jump = self.emitJump(.JUMP_IF_FALSE);
+        self.emitByte(.POP);
+        self.statement();
+        self.patchJump(exit_jump);
+        self.emitByte(.POP);
+    }
+
+    fn statement(self: *Parser) void {
+        switch (self.current().ttype) {
+            .PRINT => {
+                self.advance();
+                self.printStmt();
+            },
+            .IF => {
+                self.advance();
+                self.ifStatement();
+            },
+            .LEFT_BRACE => {
+                self.advance();
+                self.beginScope();
+                self.block();
+                self.endScope();
+            },
+            else => self.expressionStmt()
         }
     }
 
@@ -352,6 +405,23 @@ pub const Parser = struct {
 
     pub fn variable(self: *Parser) void {
         self.namedVariable(self.previous());
+    }
+
+    pub fn and_(self: *Parser) void {
+        const end_jump = self.emitJump(.JUMP_IF_FALSE);
+        self.emitByte(.POP);
+        self.parsePrecedence(@intFromEnum(Precedence.AND));
+        self.patchJump(end_jump);
+    }
+
+    pub fn or_(self: *Parser) void {
+        const else_jump = self.emitJump(.JUMP_IF_FALSE);
+        const end_jump = self.emitJump(.JUMP);
+
+        self.patchJump(else_jump);
+        self.emitByte(.POP);
+        self.parsePrecedence(@intFromEnum(Precedence.OR));
+        self.patchJump(end_jump);
     }
 
     pub fn number(self: *Parser) void {

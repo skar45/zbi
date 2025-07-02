@@ -15,6 +15,15 @@ fn simpleInstruction(name: []const u8, offset: usize) !usize {
     return offset + 1;
 }
 
+fn jumpInstruction(name: []const u8, sign: usize, c: *Chunks, offset: usize) !usize {
+    const stdout = std.io.getStdOut().writer();
+    var jump = @intFromEnum(c.code.items[offset + 1]) << 8;
+    jump |= @intFromEnum(c.code.items[offset + 2]);
+    const index = @intFromEnum(c.code.items[offset + 1]);
+    try stdout.print("{s} {d:0>3} -> {d}\n", .{name, index, offset + 3 + sign * jump});
+    return offset + 3;
+}
+
 fn byteInstruction(name: []const u8, c: *Chunks, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
     const index = @intFromEnum(c.code.items[offset + 1]);
@@ -49,6 +58,7 @@ pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
         .NIL => try simpleInstruction("OP_NIL", offset),
         .TRUE => try simpleInstruction("OP_TRUE", offset),
         .FALSE => try simpleInstruction("OP_FALSE", offset),
+        .NOT => try simpleInstruction("OP_NOT", offset),
         .EQUAL => try simpleInstruction("OP_EQUAL", offset),
         .GREATER => try simpleInstruction("OP_GREATER", offset),
         .LESS => try simpleInstruction("OP_LESS", offset),
@@ -63,6 +73,8 @@ pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
         .DEFINE_GLOBAL => try constantInstruction("OP_DEFINE_GLOBAL", c, offset),
         .GET_GLOBAL => try constantInstruction("OP_GET_GLOBAL", c, offset),
         .SET_GLOBAL => try constantInstruction("OP_SET_GLOBAL", c, offset),
+        .JUMP => try jumpInstruction("OP_JUMP", 1, c, offset),
+        .JUMP_IF_FALSE => try jumpInstruction("OP_JUMP_IF_ELSE", 1, c, offset),
         else => error.UnknownOpcode
     };
 }

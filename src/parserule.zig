@@ -8,6 +8,8 @@ const unary = Parser.unary;
 const number = Parser.number;
 const string = Parser.string;
 const literal = Parser.literal;
+const and_ = Parser.and_;
+const or_ = Parser.or_;
 
 pub const Precedence = enum(u8) {
     NONE = 0,
@@ -71,7 +73,7 @@ pub const rules = blk: {
     setRule(&r, .IDENTIFIER, variable, null, .NONE);
     setRule(&r, .STRING, string, null, .NONE);
     setRule(&r, .NUMBER, number, null, .NONE);
-    setRule(&r, .AND, null, null, .NONE);
+    setRule(&r, .AND, and_, null, .NONE);
     setRule(&r, .CLASS, null, null, .NONE);
     setRule(&r, .ELSE, null, null, .NONE);
     setRule(&r, .FALSE, literal, null, .NONE);
@@ -79,7 +81,7 @@ pub const rules = blk: {
     setRule(&r, .FUN, null, null, .NONE);
     setRule(&r, .IF, null, null, .NONE);
     setRule(&r, .NIL, literal, null, .NONE);
-    setRule(&r, .OR, null, null, .NONE);
+    setRule(&r, .OR, or_, null, .NONE);
     setRule(&r, .PRINT, null, null, .NONE);
     setRule(&r, .RETURN, null, null, .NONE);
     setRule(&r, .SUPER, null, null, .NONE);

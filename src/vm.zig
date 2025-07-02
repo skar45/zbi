@@ -286,6 +286,19 @@ pub const VM = struct {
                         }
                     }
                 },
+                .JUMP => {
+                    const offset: usize = @intFromEnum(self.code[self.code_idx]) << 8
+                                        | @intFromEnum(self.code[self.code_idx + 1]);
+                    self.code_idx += offset;
+                },
+                .JUMP_IF_FALSE => {
+                    const offset: usize = @intFromEnum(self.code[self.code_idx]) << 8
+                                        | @intFromEnum(self.code[self.code_idx + 1]);
+                    self.code_idx += 2;
+                    if (isFalsy(try self.peek(0))) {
+                        self.code_idx += offset;
+                    }
+                },
                 .POP => {
                     _ = self.pop();
                 },
