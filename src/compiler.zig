@@ -18,9 +18,15 @@ const LOGGING  = debug.ENABLE_LOGGING;
 const rules = parserule.rules;
 
 const MAX_LOCALS = 256;
+const UINT16_MAX = 1 << 16 - 1;
+
+// TODO:
+// - For loops
+// - Pattern match
+// - Loop control flow: break, continue
 
 pub const Local = struct {
-    name: Token,
+    name: *const Token,
     depth: isize,
 };
 
@@ -70,6 +76,10 @@ pub const Parser = struct {
 
     inline fn current(self: *Parser) *const Token {
         return &self.token_buf[1];
+    }
+
+    inline fn currentChunkCount(self: *Parser) usize {
+        return self.compilingChunk.code.items.len;
     }
 
     inline fn errorAt(self: *Parser, token: *const Token, message: []const u8) void {
@@ -126,11 +136,19 @@ pub const Parser = struct {
         self.emitByte(byte2);
     }
 
+    inline fn emitLoop(self: *Parser, start: usize) void {
+        self.emitByte(.LOOP);
+        const offset = self.currentChunkCount() - start + 2;
+        if (offset > UINT16_MAX) self.errorAtCurrent("Loop body above maximum");
+        self.emitByte(@intFromEnum((offset >> 8) & 0xFF));
+        self.emitByte(@intFromEnum(offset & 0xFF));
+    }
+
     inline fn emitJump(self: *Parser, instruction: Opcode) usize {
         self.emitByte(instruction);
         self.emitByte(@enumFromInt(0xFF));
         self.emitByte(@enumFromInt(0xFF));
-        return self.compilingChunk.code.items.len - 2;
+        return self.currentChunkCount() - 2;
     }
 
     inline fn emitReturn(self: *Parser) void {
@@ -147,8 +165,8 @@ pub const Parser = struct {
     }
 
     inline fn patchJump(self: *Parser, offset: usize) void {
-        const jump = self.compilingChunk.code.items.len - offset - 2;
-        if (jump > (1 << 16 - 1) or jump < 0) {
+        const jump = self.currentChunkCount() - offset - 2;
+        if (jump > UINT16_MAX or jump < 0) {
             self.errorAtCurrent("Jump error");
         }
 
@@ -171,10 +189,8 @@ pub const Parser = struct {
 
     inline fn endScope(self: *Parser) void {
         self.compiler.scope_depth -= 1;
-        const local_count = self.compiler.local_count;
-        const scope_depth = self.compiler.scope_depth;
         const locals = &self.compiler.locals;
-        while (local_count > 0 and locals[local_count - 1].depth > scope_depth) {
+        while (self.compiler.local_count > 0 and locals[self.compiler.local_count - 1].depth > self.compiler.scope_depth) {
             self.emitByte(.POP);
             self.compiler.local_count -= 1;
         }
@@ -228,12 +244,13 @@ pub const Parser = struct {
     inline fn resolveLocal(self: *Parser, name: *const Token) ?usize {
         const local_count = self.compiler.local_count;
         for (0..local_count) |i| {
-            const local = self.compiler.locals[local_count - 1 - i];
-            if (compareIdentifier(name, &local.name)) {
+            const index = local_count - 1 - i;
+            const local = self.compiler.locals[index];
+            if (compareIdentifier(name, local.name)) {
                 if (local.depth == -1) {
                     self.errorAtCurrent("Can't read variables in its own initializer");
                 }
-                return i;
+                return index;
             }
         }
         return null;
@@ -249,10 +266,12 @@ pub const Parser = struct {
             self.errorAtCurrent("Local variables exceed the allotted size");
             return;
         }
-        var local = self.compiler.locals[self.compiler.local_count];
+        const local = Local {
+            .depth = -1,
+            .name = token
+        };
+        self.compiler.locals[self.compiler.local_count] = local;
         self.compiler.local_count += 1;
-        local.name = token.*;
-        local.depth = -1;
     }
 
     inline fn declareVariable(self: *Parser) void {
@@ -263,7 +282,7 @@ pub const Parser = struct {
             const local = self.compiler.locals[local_count - 1 - i];
             if (local.depth != -1 and local.depth < self.compiler.scope_depth) break;
 
-            if (!compareIdentifier(&local.name, name)) {
+            if (!compareIdentifier(local.name, name)) {
                 self.errorAtCurrent("Variable name already exsists in the current scope");
             }
         }
@@ -331,6 +350,7 @@ pub const Parser = struct {
     }
 
     fn whileStmt(self: *Parser) void {
+        const loop_start = self.compilingChunk.code.items.len;
         self.consume(.LEFT_PAREN, "Expected '(' after 'while'");
         self.expression();
         self.consume(.RIGHT_PAREN, "Expected ')' after condition");
@@ -338,6 +358,7 @@ pub const Parser = struct {
         const exit_jump = self.emitJump(.JUMP_IF_FALSE);
         self.emitByte(.POP);
         self.statement();
+        self.emitLoop(loop_start);
         self.patchJump(exit_jump);
         self.emitByte(.POP);
     }
@@ -364,7 +385,8 @@ pub const Parser = struct {
 
     inline fn varDeclaration(self: *Parser) void {
         const global = self.parseVariable("Expect variable name");
-        if (self.match(.EQUAL) and self.canAssign) {
+        if (self.match(.EQUAL)) {
+            self.advance();
             self.expression();
         } else {
             self.emitByte(.NIL);

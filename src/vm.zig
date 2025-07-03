@@ -16,7 +16,7 @@ const Context = struct {
         var h: u32 = 2166136261;
         for (k) |s| {
             h ^= s;
-            h *= 16777619;
+            h *%= 1677619;
         }
         return h;
     }
@@ -151,7 +151,7 @@ pub const VM = struct {
             .number => |v| v,
             .string => |v| {
                 if (op[0] != '+') return error.InvalidArithmeticOp;
-                try switch (try self.peek(1)) {
+                try switch (try self.peek(0)) {
                     .string => {
                         const str = self.pop();
                         switch (str) {
@@ -163,7 +163,7 @@ pub const VM = struct {
                             else => return error.InvalidArithmeticOp
                         }
                     },
-                    else => return error.InvalidArithmeticOp
+                    else =>  return error.InvalidArithmeticOp
                 };
             },
             else => return error.InvalidArithmeticOp
@@ -187,6 +187,13 @@ pub const VM = struct {
         const i = @intFromEnum(self.code[self.code_idx]);
         self.code_idx += 1;
         return self.chunks.values.items[i];
+    }
+
+    /// jump offset is encoded in 2 bytes of instructions
+    inline fn get_jump_offset(self: *VM) usize {
+        const offset: usize = @intFromEnum(self.code[self.code_idx]) << 8
+                            | @intFromEnum(self.code[self.code_idx + 1]);
+        return offset;
     }
 
     fn run_vm(self: *VM) !void {
@@ -217,7 +224,7 @@ pub const VM = struct {
                 .DIVIDE => try self.binaryOp("/"),
                 .NOT => self.push(Value.setBool(VM.isFalsy(self.pop()))),
                 .NEGATE => {
-                    switch (try self.peek(1)) {
+                    switch (try self.peek(0)) {
                         .number => {
                             const num = -self.pop().number;
                             self.push(Value.setNumber(num));
@@ -240,8 +247,9 @@ pub const VM = struct {
                     }
                 },
                 .GET_LOCAL => {
-                    const name = self.read_val_from_chunk();
-                    self.push(name);
+                    const i = @intFromEnum(self.code[self.code_idx]);
+                    self.code_idx += 1;
+                    self.push(try self.peek(i));
                 },
                 .SET_LOCAL => {
                     const i = @intFromEnum(self.code[self.code_idx]);
@@ -287,17 +295,19 @@ pub const VM = struct {
                     }
                 },
                 .JUMP => {
-                    const offset: usize = @intFromEnum(self.code[self.code_idx]) << 8
-                                        | @intFromEnum(self.code[self.code_idx + 1]);
+                    const offset = self.get_jump_offset();
                     self.code_idx += offset;
                 },
                 .JUMP_IF_FALSE => {
-                    const offset: usize = @intFromEnum(self.code[self.code_idx]) << 8
-                                        | @intFromEnum(self.code[self.code_idx + 1]);
+                    const offset = self.get_jump_offset();
                     self.code_idx += 2;
                     if (isFalsy(try self.peek(0))) {
                         self.code_idx += offset;
                     }
+                },
+                .LOOP => {
+                    const offset = self.get_jump_offset();
+                    self.code_idx -= offset;
                 },
                 .POP => {
                     _ = self.pop();
@@ -329,7 +339,7 @@ pub const VM = struct {
     }
 
     inline fn peek(self: *VM, distance: usize) !Value {
-        return self.stack[self.stack_idx - distance];
+        return self.stack[self.stack_idx - distance - 1];
     }
 
     inline fn push(self: *VM, value: Value) void {

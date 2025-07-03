@@ -22,6 +22,7 @@ pub const Opcode = enum(usize){
     NEGATE,
     NOT,
     POP,
+    LOOP,
     JUMP,
     JUMP_IF_FALSE,
     DEFINE_GLOBAL,

@@ -7,7 +7,7 @@ const Opcode = chunks.Opcode;
 const Chunks = chunks.Chunks;
 
 
-pub const ENABLE_LOGGING = true;
+pub const ENABLE_LOGGING = false;
 
 fn simpleInstruction(name: []const u8, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
@@ -15,12 +15,15 @@ fn simpleInstruction(name: []const u8, offset: usize) !usize {
     return offset + 1;
 }
 
-fn jumpInstruction(name: []const u8, sign: usize, c: *Chunks, offset: usize) !usize {
+fn jumpInstruction(name: []const u8, sign: isize, c: *Chunks, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
     var jump = @intFromEnum(c.code.items[offset + 1]) << 8;
     jump |= @intFromEnum(c.code.items[offset + 2]);
     const index = @intFromEnum(c.code.items[offset + 1]);
-    try stdout.print("{s} {d:0>3} -> {d}\n", .{name, index, offset + 3 + sign * jump});
+    const ioffset: isize = @intCast(offset);
+    const ijump: isize = @intCast(jump);
+    const target = ioffset + 3 + sign * ijump;
+    try stdout.print("{s} {d:0>3} -> {d}\n", .{name, index, target});
     return offset + 3;
 }
 
@@ -75,6 +78,7 @@ pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
         .SET_GLOBAL => try constantInstruction("OP_SET_GLOBAL", c, offset),
         .JUMP => try jumpInstruction("OP_JUMP", 1, c, offset),
         .JUMP_IF_FALSE => try jumpInstruction("OP_JUMP_IF_ELSE", 1, c, offset),
+        .LOOP => try jumpInstruction("OP_LOOP", -1, c, offset),
         else => error.UnknownOpcode
     };
 }

@@ -158,7 +158,7 @@ pub const TableHash = struct {
         var h: u32 = 2166136261;
         for (key) |s| {
             h ^= s;
-            h *= 16777619;
+            h *%= 1677619;
         }
         return h;
     }
@@ -263,6 +263,6 @@ pub fn printValue(value: Value) !void {
             }
         },
         .nil => try stdout.print("nil ", .{}),
-        .void => {}
+        .void => std.debug.print("void", .{})
     }
 }

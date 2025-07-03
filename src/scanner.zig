@@ -80,12 +80,10 @@ pub const Scanner = struct {
             switch (self.peek()) {
                 ' ', '\r', '\t' => {
                     _ = self.advance();
-                    return;
                 },
                 '\n' => {
                     self.line += 1;
                     _ = self.advance();
-                    break;
                 },
                 '/' => {
                     if (self.peekNext() == '/') {
@@ -115,6 +113,9 @@ pub const Scanner = struct {
         rest: []const u8,
         ttype: TokenType) TokenType {
         const end = start + length;
+//         const keyword = self.start[start..end];
+//         std.debug.print("check keyword: {s} {d} \n", .{keyword, keyword.len});
+//         std.debug.print("check keyword rest: {s} {d} \n", .{rest, rest.len});
         if (std.mem.eql(u8, self.start[start..end], rest)){
             return ttype;
         } else {
@@ -154,7 +155,7 @@ pub const Scanner = struct {
                 }
                 return TokenType.IDENTIFIER;
             },
-            'v' => self.checkKeyword(1, 3, "ar", TokenType.VAR),
+            'v' => self.checkKeyword(1, 2, "ar", TokenType.VAR),
             'w' => self.checkKeyword(1, 4, "hile", TokenType.WHILE),
             else => TokenType.IDENTIFIER
         };

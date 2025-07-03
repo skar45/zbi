@@ -1,13 +1,13 @@
 const std = @import("std");
-const c = @import("chunks.zig");
+const chunks = @import("chunks.zig");
 const debug = @import("debug.zig");
-const v = @import("vm.zig");
+const vm = @import("vm.zig");
 
 const Allocator = std.mem.Allocator;
-const VM = v.VM;
-const interpret = v.interpret;
-const Opcode = c.Opcode;
-const Chunks = c.Chunks;
+const VM = vm.VM;
+const interpret = vm.interpret;
+const Opcode = chunks.Opcode;
+const Chunks = chunks.Chunks;
 
 pub fn repl(allocator: *const Allocator) !void {
     const stdout = std.io.getStdOut().writer();
@@ -40,7 +40,9 @@ pub fn runFile(path: []const u8, allocator: *const Allocator) !void {
 
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        .safety = false
+    }){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     var args_iter = try std.process.argsWithAllocator(allocator);
