@@ -201,6 +201,22 @@ pub const TableHash = struct {
 
 };
 
+pub const FnObj = struct {
+    arity: u8,
+    name: []const u8,
+    ip: usize,
+    return_ip: ?usize,
+
+    pub fn init(name: []const u8, arity: u8, ip: usize) FnObj {
+        return FnObj {
+            .arity = arity,
+            .name = name,
+            .ip = ip,
+            .return_ip = null
+        };
+    }
+};
+
 // pub const HashBucket = struct {
 //     value: Value,
 //     next: ?*HashBucket

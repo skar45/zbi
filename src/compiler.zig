@@ -26,7 +26,7 @@ const UINT16_MAX = 1 << 16 - 1;
 // - Loop control flow: break, continue
 
 pub const Local = struct {
-    name: *const Token,
+    name: Token,
     depth: isize,
 };
 
@@ -234,11 +234,7 @@ pub const Parser = struct {
     }
 
     inline fn compareIdentifier(name1: *const Token, name2: *const Token) bool {
-        if (name1.start.items.len != name2.start.items.len) return false;
-        for (name1.start.items, 0..name1.start.items.len) |n, i| {
-            if (n != name2.start.items[i]) return false;
-        }
-        return true;
+       return std.mem.eql(u8, name1.start.items, name2.start.items);
     }
 
     inline fn resolveLocal(self: *Parser, name: *const Token) ?usize {
@@ -246,7 +242,7 @@ pub const Parser = struct {
         for (0..local_count) |i| {
             const index = local_count - 1 - i;
             const local = self.compiler.locals[index];
-            if (compareIdentifier(name, local.name)) {
+            if (compareIdentifier(name, &local.name)) {
                 if (local.depth == -1) {
                     self.errorAtCurrent("Can't read variables in its own initializer");
                 }
@@ -268,7 +264,7 @@ pub const Parser = struct {
         }
         const local = Local {
             .depth = -1,
-            .name = token
+            .name = token.*
         };
         self.compiler.locals[self.compiler.local_count] = local;
         self.compiler.local_count += 1;
@@ -281,9 +277,8 @@ pub const Parser = struct {
         for (0..local_count) |i| {
             const local = self.compiler.locals[local_count - 1 - i];
             if (local.depth != -1 and local.depth < self.compiler.scope_depth) break;
-
-            if (!compareIdentifier(local.name, name)) {
-                self.errorAtCurrent("Variable name already exsists in the current scope");
+            if (compareIdentifier(&local.name, name)) {
+                self.errorAtPrevious("Variable name already exists in the current scope");
             }
         }
         self.addLocal(name);

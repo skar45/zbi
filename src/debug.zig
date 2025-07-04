@@ -7,7 +7,7 @@ const Opcode = chunks.Opcode;
 const Chunks = chunks.Chunks;
 
 
-pub const ENABLE_LOGGING = false;
+pub const ENABLE_LOGGING = true;
 
 fn simpleInstruction(name: []const u8, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();

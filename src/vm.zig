@@ -242,6 +242,7 @@ pub const VM = struct {
                     switch (name) {
                         .string => |s| {
                             try self.globals.put(s.str, try self.peek(0));
+                            _ = self.pop();
                         },
                         else => return error.VarNameMustBeString
                     }
@@ -249,7 +250,7 @@ pub const VM = struct {
                 .GET_LOCAL => {
                     const i = @intFromEnum(self.code[self.code_idx]);
                     self.code_idx += 1;
-                    self.push(try self.peek(i));
+                    self.push(self.stack[i]);
                 },
                 .SET_LOCAL => {
                     const i = @intFromEnum(self.code[self.code_idx]);
