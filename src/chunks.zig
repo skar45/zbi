@@ -6,7 +6,6 @@ const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
 
 pub const Opcode = enum(usize){
-    RETURN,
     PRINT,
     CONSTANT,
     NIL,
@@ -30,6 +29,8 @@ pub const Opcode = enum(usize){
     SET_LOCAL,
     GET_GLOBAL,
     SET_GLOBAL,
+    CALL,
+    RETURN,
     _
 };
 

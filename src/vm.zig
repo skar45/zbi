@@ -11,6 +11,22 @@ const Value = values.Value;
 const Chunks = c.Chunks;
 const OpCode = c.Opcode;
 
+const STACK_SIZE = 256;
+const MAX_CALL_STACK = 256;
+
+const InterpretResult = enum {
+    INTERPRET_OK,
+    INTERPRET_COMPILE_ERROR,
+    INTERPRET_RUNTIME_ERROR,
+};
+
+const VmError = error{
+    InvalidArithmeticOp,
+    OperandMustBeNumber,
+    VarNameMustBeString,
+    VarUndefined
+};
+
 const Context = struct {
     pub fn hash(_: *const Context, k: []const u8) u32 {
         var h: u32 = 2166136261;
@@ -31,21 +47,6 @@ const Context = struct {
 
 const GlobalDeclMap = std.ArrayHashMap([]const u8, Value, Context, true);
 
-const InterpretResult = enum {
-    INTERPRET_OK,
-    INTERPRET_COMPILE_ERROR,
-    INTERPRET_RUNTIME_ERROR,
-};
-
-const VmError = error{
-    InvalidArithmeticOp,
-    OperandMustBeNumber,
-    VarNameMustBeString,
-    VarUndefined
-};
-
-const STACK_SIZE = 256;
-
 pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
     // @compileLog("size of 'Value'", @sizeOf(Value));
     var chunks = Chunks.init();
@@ -57,12 +58,26 @@ pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
     return vm.run();
 }
 
+pub const CallFrame = struct {
+    bp: usize,
+    ret_ip: usize,
+
+    pub fn init() CallFrame {
+        return CallFrame {
+            .bp = 0,
+            .ret_ip = 0
+        };
+    }
+};
+
 pub const VM = struct {
     chunks: *Chunks,
-    code: []OpCode,
-    code_idx: usize,
+    instructions: []OpCode,
+    ip: usize,
     stack: [STACK_SIZE]Value,
-    stack_idx: usize,
+    stack_ptr: usize,
+    call_stack: [MAX_CALL_STACK]CallFrame,
+    call_stack_ptr: usize,
     globals: GlobalDeclMap,
     _allocator: *const Allocator,
 
@@ -70,10 +85,12 @@ pub const VM = struct {
         const globals = GlobalDeclMap.init(allocator.*);
         return VM {
             .chunks = chunks,
-            .code = chunks.code.items,
-            .code_idx = 0,
+            .instructions = chunks.code.items,
+            .ip = 0,
             .stack = [_]Value{Value.setVoid()} ** STACK_SIZE,
-            .stack_idx = 0,
+            .stack_ptr = 0,
+            .call_stack = [_]CallFrame{CallFrame.init()} ** MAX_CALL_STACK,
+            .call_stack_ptr = 0,
             .globals = globals,
             ._allocator = allocator,
         };
@@ -96,13 +113,13 @@ pub const VM = struct {
 
         }
         std.debug.print("\n", .{});
-        const off: usize = self.code_idx;
+        const off: usize = self.ip;
         _ = try debug.disassembleInstruction(self.chunks, off);
     }
 
     fn runtimeError(self: *VM, format: []const u8) void {
         std.debug.print("{s} \n", .{format});
-        const instruction: usize  = self.code_idx;
+        const instruction: usize  = self.ip;
         const line: usize = self.chunks.lines.items[instruction];
         std.debug.print("[line {d}] in script\n", .{line});
         self.resetStack();
@@ -184,25 +201,25 @@ pub const VM = struct {
     }
 
     inline fn read_val_from_chunk(self: *VM) Value {
-        const i = @intFromEnum(self.code[self.code_idx]);
-        self.code_idx += 1;
+        const i = @intFromEnum(self.instructions[self.ip]);
+        self.ip += 1;
         return self.chunks.values.items[i];
     }
 
     /// jump offset is encoded in 2 bytes of instructions
     inline fn get_jump_offset(self: *VM) usize {
-        const offset: usize = @intFromEnum(self.code[self.code_idx]) << 8
-                            | @intFromEnum(self.code[self.code_idx + 1]);
+        const offset: usize = @intFromEnum(self.instructions[self.ip]) << 8
+                            | @intFromEnum(self.instructions[self.ip + 1]);
         return offset;
     }
 
     fn run_vm(self: *VM) !void {
-        while (self.code.len > self.code_idx) {
+        while (self.instructions.len > self.ip) {
             if (comptime debug.ENABLE_LOGGING) {
                 try self.debug_vm();
             }
-            const instruction = self.code[self.code_idx];
-            self.code_idx += 1;
+            const instruction = self.instructions[self.ip];
+            self.ip += 1;
             switch (instruction) {
                 .CONSTANT => {
                     const val = self.read_val_from_chunk();
@@ -248,13 +265,13 @@ pub const VM = struct {
                     }
                 },
                 .GET_LOCAL => {
-                    const i = @intFromEnum(self.code[self.code_idx]);
-                    self.code_idx += 1;
+                    const i = @intFromEnum(self.instructions[self.ip]);
+                    self.ip += 1;
                     self.push(self.stack[i]);
                 },
                 .SET_LOCAL => {
-                    const i = @intFromEnum(self.code[self.code_idx]);
-                    self.code_idx += 1;
+                    const i = @intFromEnum(self.instructions[self.ip]);
+                    self.ip += 1;
                     self.stack[i] = try self.peek(0);
                 },
                 .GET_GLOBAL => {
@@ -297,23 +314,38 @@ pub const VM = struct {
                 },
                 .JUMP => {
                     const offset = self.get_jump_offset();
-                    self.code_idx += offset;
+                    self.ip += offset;
                 },
                 .JUMP_IF_FALSE => {
                     const offset = self.get_jump_offset();
-                    self.code_idx += 2;
+                    self.ip += 2;
                     if (isFalsy(try self.peek(0))) {
-                        self.code_idx += offset;
+                        self.ip += offset;
                     }
                 },
                 .LOOP => {
                     const offset = self.get_jump_offset();
-                    self.code_idx -= offset;
+                    self.ip -= offset;
                 },
                 .POP => {
                     _ = self.pop();
                 },
-                .RETURN => continue,
+                .CALL => {
+                    // CALL ARGS FN
+                    self.call_stack_ptr += 1;
+                    var call_stack = self.call_stack[self.call_stack_ptr];
+                    const airity = @intFromEnum(self.instructions[self.ip]);
+                    call_stack.bp = self.stack_ptr - airity;
+                    call_stack.ret_ip = self.ip - 1;
+                    const procedure = @intFromEnum(self.instructions[self.ip]);
+                    self.ip = procedure;
+                },
+                .RETURN => {
+                    // RET VAL
+                    const call_stack = self.call_stack[self.call_stack_ptr];
+                    self.call_stack_ptr -= 1;
+                    const ret_val = self.read_val_from_chunk();
+                },
                 _ => break
             }
         }
@@ -335,23 +367,23 @@ pub const VM = struct {
     }
 
     inline fn resetStack(self: *VM) void {
-        self.stack_idx = 0;
+        self.stack_ptr = 0;
         self.stack = [_]Value{Value.setVoid()} ** STACK_SIZE;
     }
 
     inline fn peek(self: *VM, distance: usize) !Value {
-        return self.stack[self.stack_idx - distance - 1];
+        return self.stack[self.stack_ptr - distance - 1];
     }
 
     inline fn push(self: *VM, value: Value) void {
-        self.stack[self.stack_idx] = value;
-        self.stack_idx += 1;
+        self.stack[self.stack_ptr] = value;
+        self.stack_ptr += 1;
     }
 
     inline fn pop(self: *VM) Value {
-        self.stack_idx -= 1;
-        const value = self.stack[self.stack_idx];
-        self.stack[self.stack_idx] = Value.setVoid();
+        self.stack_ptr -= 1;
+        const value = self.stack[self.stack_ptr];
+        self.stack[self.stack_ptr] = Value.setVoid();
         return value;
     }
 };
