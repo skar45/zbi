@@ -9,6 +9,26 @@ const interpret = vm.interpret;
 const Opcode = chunks.Opcode;
 const Chunks = chunks.Chunks;
 
+// TODO:
+// - For loops
+// - Loop control flow: break, continue
+// - Stack overflow check
+// - Call frame overflow check
+// - Optimize away unecessary POP instructions
+// - Nested string interpolation
+//
+// - Pattern match
+// - Dynamic arrays
+// - Structs
+// - Copy on write strings
+// - JIT to x86
+// - GC with
+//   - concurrent relocation
+//   - concurrent marking with coloured pointers
+//   - region based memory management
+//   - concurrent batched free
+
+
 pub fn repl(allocator: *const Allocator) !void {
     const stdout = std.io.getStdOut().writer();
     const stdin = std.io.getStdIn().reader();

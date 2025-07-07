@@ -59,12 +59,12 @@ pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
 }
 
 pub const CallFrame = struct {
-    bp: usize,
+    base_ptr: usize,
     ret_ip: usize,
 
     pub fn init() CallFrame {
         return CallFrame {
-            .bp = 0,
+            .base_ptr = 0,
             .ret_ip = 0
         };
     }
@@ -122,7 +122,7 @@ pub const VM = struct {
         const instruction: usize  = self.ip;
         const line: usize = self.chunks.lines.items[instruction];
         std.debug.print("[line {d}] in script\n", .{line});
-        self.resetStack();
+        self.reset();
     }
 
     inline fn isFalsy(value: Value) bool {
@@ -267,12 +267,14 @@ pub const VM = struct {
                 .GET_LOCAL => {
                     const i = @intFromEnum(self.instructions[self.ip]);
                     self.ip += 1;
-                    self.push(self.stack[i]);
+                    const ptr = self.call_stack[self.call_stack_ptr].base_ptr;
+                    self.push(self.stack[ptr + i]);
                 },
                 .SET_LOCAL => {
                     const i = @intFromEnum(self.instructions[self.ip]);
                     self.ip += 1;
-                    self.stack[i] = try self.peek(0);
+                    const ptr = self.call_stack[self.call_stack_ptr].base_ptr;
+                    self.stack[ptr + i] = try self.peek(0);
                 },
                 .GET_GLOBAL => {
                     const name = self.read_val_from_chunk();
@@ -331,20 +333,27 @@ pub const VM = struct {
                     _ = self.pop();
                 },
                 .CALL => {
-                    // CALL ARGS FN
+                    // CALL ARGLEN FN
                     self.call_stack_ptr += 1;
                     var call_stack = self.call_stack[self.call_stack_ptr];
                     const airity = @intFromEnum(self.instructions[self.ip]);
-                    call_stack.bp = self.stack_ptr - airity;
-                    call_stack.ret_ip = self.ip - 1;
+                    self.ip += 1;
+                    call_stack.base_ptr = self.stack_ptr - airity;
                     const procedure = @intFromEnum(self.instructions[self.ip]);
+                    self.ip += 1;
+                    call_stack.ret_ip = self.ip;
                     self.ip = procedure;
                 },
                 .RETURN => {
                     // RET VAL
                     const call_stack = self.call_stack[self.call_stack_ptr];
-                    self.call_stack_ptr -= 1;
                     const ret_val = self.read_val_from_chunk();
+                    for (0..(self.stack_ptr - call_stack.base_ptr)) |_| {
+                        _ = self.pop();
+                    }
+                    self.call_stack_ptr -= 1;
+                    self.push(ret_val);
+                    self.ip = call_stack.ret_ip;
                 },
                 _ => break
             }
@@ -366,9 +375,15 @@ pub const VM = struct {
         return InterpretResult.INTERPRET_OK;
     }
 
-    inline fn resetStack(self: *VM) void {
+    inline fn reset(self: *VM) void {
         self.stack_ptr = 0;
-        self.stack = [_]Value{Value.setVoid()} ** STACK_SIZE;
+        self.call_stack_ptr = 0;
+        for (0..self.stack_ptr) |i| {
+            self.stack[i] = Value.setVoid();
+        }
+        for (0..self.call_stack_ptr) |i| {
+            self.call_stack[i] = CallFrame.init();
+        }
     }
 
     inline fn peek(self: *VM, distance: usize) !Value {

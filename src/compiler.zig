@@ -175,7 +175,7 @@ pub const Parser = struct {
     }
 
     pub inline fn endCompiler(self: *Parser) void {
-        self.emitReturn();
+        // self.emitReturn();
         if (comptime LOGGING) {
             debug.disassembleChunk(self.compilingChunk, "code") catch |e| {
                 std.debug.print("Could not print debug {}", .{e});
@@ -189,8 +189,9 @@ pub const Parser = struct {
 
     inline fn endScope(self: *Parser) void {
         self.compiler.scope_depth -= 1;
-        const locals = &self.compiler.locals;
-        while (self.compiler.local_count > 0 and locals[self.compiler.local_count - 1].depth > self.compiler.scope_depth) {
+        const local_depth = self.compiler.locals[self.compiler.local_count - 1].depth;
+        const scope_depth = self.compiler.scope_depth;
+        while (self.compiler.local_count > 0 and local_depth > scope_depth) {
             self.emitByte(.POP);
             self.compiler.local_count -= 1;
         }

@@ -33,19 +33,19 @@ pub const ParseRule = struct {
     precedence: Precedence
 };
 
-pub const rules = blk: {
+pub const rules =  blk: {
     var r: [40]ParseRule = undefined;
     const setRule = struct {
         fn lambda(
             cr: *[40]ParseRule,
             t_type: TokenType,
             pre: ?GrammarFn,
-            suf: ?GrammarFn,
+            inf: ?GrammarFn,
             prec: Precedence) void
         {
             cr[@intFromEnum(t_type)] = ParseRule {
                 .prefix = pre,
-                .infix = suf,
+                .infix = inf,
                 .precedence = prec,
             };
         }
@@ -78,7 +78,7 @@ pub const rules = blk: {
     setRule(&r, .ELSE, null, null, .NONE);
     setRule(&r, .FALSE, literal, null, .NONE);
     setRule(&r, .FOR, null, null, .NONE);
-    setRule(&r, .FUN, null, null, .NONE);
+    setRule(&r, .FN, null, null, .NONE);
     setRule(&r, .IF, null, null, .NONE);
     setRule(&r, .NIL, literal, null, .NONE);
     setRule(&r, .OR, or_, null, .NONE);
