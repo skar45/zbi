@@ -61,11 +61,13 @@ pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
 pub const CallFrame = struct {
     base_ptr: usize,
     ret_ip: usize,
+    ret_code: *const []OpCode,
 
     pub fn init() CallFrame {
         return CallFrame {
             .base_ptr = 0,
-            .ret_ip = 0
+            .ret_ip = 0,
+            .ret_code= undefined
         };
     }
 };

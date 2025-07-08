@@ -51,7 +51,7 @@ pub const rules =  blk: {
         }
     }.lambda;
 
-    setRule(&r, .LEFT_PAREN, grouping, null, .NONE);
+    setRule(&r, .LEFT_PAREN, grouping, null, .CALL);
     setRule(&r, .RIGHT_PAREN, null, null, .NONE);
     setRule(&r, .LEFT_BRACE, null, null, .NONE);
     setRule(&r, .RIGHT_BRACE, null, null, .NONE);

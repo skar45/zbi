@@ -3,12 +3,15 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const ArrayHashMap = std.ArrayHashMap;
+const OpCode = @import("chunks.zig").OpCode;
 
 pub const Value = union(enum) {
     boolean: bool,
     number: f64,
     string: StringObj,
     table: Table,
+    closure: ClosureObj,
+    function: FnObj,
     nil,
     void,
 
@@ -54,7 +57,6 @@ pub const Value = union(enum) {
         };
     }
 };
-
 
 pub const StringObj = struct {
     str: []const u8,
@@ -125,8 +127,7 @@ pub const Table = struct {
 
     pub fn insert(self: *Table, k: Value, v: Value) void {
         switch (k) {
-            // TODO return error
-            .table => unreachable,
+            .table | .void => unreachable,
             else => self.map.put(k, v) catch unreachable
         }
     }
@@ -150,9 +151,8 @@ pub const TableHash = struct {
                 break :blk &buf;
             },
             .string => |s| s.str,
-            .table => unreachable,
-            .void => unreachable,
-            .nil => "nil"
+            .nil => "nil",
+            else => unreachable
         };
 
         var h: u32 = 2166136261;
@@ -188,32 +188,53 @@ pub const TableHash = struct {
                     else => false
                 };
             },
-            .table => unreachable,
-            .void => unreachable,
             .nil => {
                 return switch (key2) {
                     .nil => true,
                     else => false
                 };
-            }
+            },
+            else => unreachable
         };
     }
 
 };
 
 pub const FnObj = struct {
-    arity: u8,
-    name: []const u8,
-    ip: usize,
-    return_ip: ?usize,
+    code: []OpCode,
 
-    pub fn init(name: []const u8, arity: u8, ip: usize) FnObj {
+    pub fn init(code: []OpCode) FnObj {
         return FnObj {
-            .arity = arity,
-            .name = name,
-            .ip = ip,
-            .return_ip = null
+            .code = code
         };
+    }
+};
+
+pub const ClosureObj = struct {
+    code: ArrayList(OpCode),
+    values: ArrayList(Value),
+    _allocator: *const Allocator,
+
+    pub fn init(allocator: *const Allocator) ClosureObj {
+        return ClosureObj {
+            .code = ArrayList(OpCode).initCapacity(allocator, 32) catch unreachable,
+            .value = ArrayList(Value).initCapacity(allocator, 32) catch unreachable,
+            ._allocator = allocator
+        };
+    }
+
+    pub fn writeChunk(self: *ClosureObj, op: OpCode) void {
+        self.code.append(op);
+    }
+
+    pub fn addConstant(self: *ClosureObj, value: Value) OpCode {
+        self.values.append(value);
+        return @intFromEnum(self.values.items.len - 1);
+    }
+
+    pub fn deinit(self: *ClosureObj) void {
+        self.code.deinit();
+        self.values.deinit();
     }
 };
 
@@ -279,6 +300,7 @@ pub fn printValue(value: Value) !void {
             }
         },
         .nil => try stdout.print("nil ", .{}),
-        .void => std.debug.print("void", .{})
+        .void => try stdout.print("void", .{}),
+        else => try stdout.print("value formattin not implemented", .{}),
     }
 }

@@ -17,7 +17,7 @@ pub const TokenType = enum(usize) {
   IDENTIFIER, STRING, NUMBER,
   // Keywords.
   AND, CLASS, ELSE, FALSE,
-  FOR, FUN, IF, NIL, OR,
+  FOR, FN, IF, NIL, OR,
   PRINT, RETURN, SUPER, THIS,
   TRUE, VAR, WHILE,
   ERROR, EOF
@@ -111,11 +111,9 @@ pub const Scanner = struct {
         start: usize,
         length: usize,
         rest: []const u8,
-        ttype: TokenType) TokenType {
+        ttype: TokenType) TokenType 
+    {
         const end = start + length;
-//         const keyword = self.start[start..end];
-//         std.debug.print("check keyword: {s} {d} \n", .{keyword, keyword.len});
-//         std.debug.print("check keyword rest: {s} {d} \n", .{rest, rest.len});
         if (std.mem.eql(u8, self.start[start..end], rest)){
             return ttype;
         } else {
@@ -133,7 +131,7 @@ pub const Scanner = struct {
                     return switch (self.start[1]) {
                         'a' => self.checkKeyword(2, 3, "lse", TokenType.FALSE),
                         'o' => self.checkKeyword(2, 1, "r",TokenType.FOR),
-                        'u' => self.checkKeyword(2, 1, "n", TokenType.FUN),
+                        'n' => TokenType.FN,
                         else => TokenType.IDENTIFIER
                     };
                 }

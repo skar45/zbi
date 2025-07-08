@@ -20,11 +20,6 @@ const rules = parserule.rules;
 const MAX_LOCALS = 256;
 const UINT16_MAX = 1 << 16 - 1;
 
-// TODO:
-// - For loops
-// - Pattern match
-// - Loop control flow: break, continue
-
 pub const Local = struct {
     name: Token,
     depth: isize,
@@ -425,6 +420,10 @@ pub const Parser = struct {
         self.namedVariable(self.previous());
     }
 
+    pub fn function(self: *Parser) void {
+
+    }
+
     pub fn and_(self: *Parser) void {
         const end_jump = self.emitJump(.JUMP_IF_FALSE);
         self.emitByte(.POP);
@@ -445,7 +444,6 @@ pub const Parser = struct {
     pub fn number(self: *Parser) void {
         const num = std.fmt.parseFloat(f64, self.previous().start.items) catch {
             self.errorAt(self.previous(), "Could not parse float! \n");
-            std.process.exit(64);
         };
         const value = Value.setNumber(num);
         self.emitConstant(value);
@@ -478,7 +476,7 @@ pub const Parser = struct {
             .BANG_EQUAL => self.emitBytes(.EQUAL, .NOT),
             .EQUAL_EQUAL => self.emitByte(.EQUAL),
             .GREATER => self.emitByte(.GREATER),
-            .GREATER_EQUAL => self.emitBytes(.LESS,  .NOT),
+            .GREATER_EQUAL => self.emitBytes(.LESS, .NOT),
             .LESS => self.emitByte(.LESS),
             .LESS_EQUAL => self.emitBytes(.GREATER, .NOT),
             .PLUS => self.emitByte(.ADD),
