@@ -15,6 +15,12 @@ pub const Value = union(enum) {
     nil,
     void,
 
+    pub fn setFn(code_ptr: usize) Value {
+        return Value {
+            .function = code_ptr
+        };
+    }
+
     pub fn setVoid() Value {
         return Value {
             .void = undefined
@@ -201,23 +207,23 @@ pub const TableHash = struct {
 };
 
 pub const FnObj = struct {
-    code: []OpCode,
+    code_ptr: usize,
 
-    pub fn init(code: []OpCode) FnObj {
+    pub fn init(code_ptr: usize) FnObj {
         return FnObj {
-            .code = code
+            .code_ptr = code_ptr
         };
     }
 };
 
 pub const ClosureObj = struct {
-    code: ArrayList(OpCode),
     values: ArrayList(Value),
+    code_ptr: usize,
     _allocator: *const Allocator,
 
-    pub fn init(allocator: *const Allocator) ClosureObj {
+    pub fn init(allocator: *const Allocator, code_ptr: usize) ClosureObj {
         return ClosureObj {
-            .code = ArrayList(OpCode).initCapacity(allocator, 32) catch unreachable,
+            .code_ptr = code_ptr,
             .value = ArrayList(Value).initCapacity(allocator, 32) catch unreachable,
             ._allocator = allocator
         };

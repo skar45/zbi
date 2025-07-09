@@ -10,7 +10,7 @@ const Scanner = lexer.Scanner;
 const TokenType = lexer.TokenType;
 const Token = lexer.Token;
 const Chunks = c.Chunks;
-const Opcode = c.Opcode;
+const OpCode = c.OpCode;
 const Precedence = parserule.Precedence;
 const ParseRule = parserule.ParseRule;
 const Value = values.Value;
@@ -18,7 +18,14 @@ const LOGGING  = debug.ENABLE_LOGGING;
 const rules = parserule.rules;
 
 const MAX_LOCALS = 256;
+const MAX_FUNCTIONS = 4096;
 const UINT16_MAX = 1 << 16 - 1;
+
+pub const CompileFunction = struct {
+    airity: u8,
+    depth: u32,
+    name: Token,
+};
 
 pub const Local = struct {
     name: Token,
@@ -27,14 +34,19 @@ pub const Local = struct {
 
 pub const Compiler = struct {
     locals: [MAX_LOCALS]Local,
+    functions: [MAX_FUNCTIONS]CompileFunction,
     local_count: u32,
     scope_depth: u32,
+    current_frame: u16,
+    function_count: u16,
 
     pub fn init() Compiler {
         return Compiler {
             .locals = undefined,
+            .functions = undefined,
             .local_count = 0,
-            .scope_depth = 0
+            .scope_depth = 0,
+            .current_frame = 0
         };
     }
 };
@@ -74,7 +86,11 @@ pub const Parser = struct {
     }
 
     inline fn currentChunkCount(self: *Parser) usize {
-        return self.compilingChunk.code.items.len;
+        return self.compilingChunk.codeStack.items.len;
+    }
+
+    inline fn currentFrame(self: *Parser) u16 {
+        return self.compiler.current_frame;
     }
 
     inline fn errorAt(self: *Parser, token: *const Token, message: []const u8) void {
@@ -122,11 +138,11 @@ pub const Parser = struct {
         }
     }
 
-    inline fn emitByte(self: *Parser, byte: Opcode) void {
-        self.compilingChunk.writeChunk(byte, self.previous().line);
+    inline fn emitByte(self: *Parser, byte: OpCode) void {
+        self.compilingChunk.writeChunk(self.currentFrame(), byte, self.previous().line);
     }
 
-    inline fn emitBytes(self: *Parser, byte1: Opcode, byte2: Opcode) void {
+    inline fn emitBytes(self: *Parser, byte1: OpCode, byte2: Opcode) void {
         self.emitByte(byte1);
         self.emitByte(byte2);
     }
@@ -139,7 +155,7 @@ pub const Parser = struct {
         self.emitByte(@intFromEnum(offset & 0xFF));
     }
 
-    inline fn emitJump(self: *Parser, instruction: Opcode) usize {
+    inline fn emitJump(self: *Parser, instruction: OpCode) usize {
         self.emitByte(instruction);
         self.emitByte(@enumFromInt(0xFF));
         self.emitByte(@enumFromInt(0xFF));
@@ -147,16 +163,16 @@ pub const Parser = struct {
     }
 
     inline fn emitReturn(self: *Parser) void {
-        self.emitByte(Opcode.RETURN);
+        self.emitByte(OpCode.RETURN);
     }
 
-    inline fn makeConstant(self: *Parser, value: Value) Opcode {
+    inline fn makeConstant(self: *Parser, value: Value) OpCode {
         const constant = self.compilingChunk.addConstant(value);
         return constant;
     }
 
     inline fn emitConstant(self: *Parser, value: Value) void {
-        self.emitBytes(Opcode.CONSTANT, self.makeConstant(value));
+        self.emitBytes(OpCode.CONSTANT, self.makeConstant(value));
     }
 
     inline fn patchJump(self: *Parser, offset: usize) void {
@@ -165,8 +181,8 @@ pub const Parser = struct {
             self.errorAtCurrent("Jump error");
         }
 
-        self.compilingChunk.code.items[offset] = @enumFromInt((jump >> 8) & 0xFF);
-        self.compilingChunk.code.items[offset + 1] = @enumFromInt(jump & 0xFF);
+        self.compilingChunk.codeStack.items[offset] = @enumFromInt((jump >> 8) & 0xFF);
+        self.compilingChunk.codeStack.items[offset + 1] = @enumFromInt(jump & 0xFF);
     }
 
     pub inline fn endCompiler(self: *Parser) void {
@@ -248,7 +264,7 @@ pub const Parser = struct {
         return null;
     }
 
-    inline fn identifierConstant(self: *Parser, name: *const Token) Opcode {
+    inline fn identifierConstant(self: *Parser, name: *const Token) OpCode {
         const str = Value.setString(name.start.items, self._allocator);
         return self.makeConstant(str);
     }
@@ -291,14 +307,14 @@ pub const Parser = struct {
         self.compiler.locals[self.compiler.local_count - 1].depth = self.compiler.scope_depth;
     }
 
-    inline fn parseVariable(self: *Parser, msg: []const u8) Opcode {
+    inline fn parseVariable(self: *Parser, msg: []const u8) OpCode {
         self.consume(.IDENTIFIER, msg);
         self.declareVariable();
-        if (self.compiler.scope_depth > 0) return Opcode.RETURN;
+        if (self.compiler.scope_depth > 0) return OpCode.RETURN;
         return self.identifierConstant(self.previous());
     }
 
-    inline fn defineVariable(self: *Parser, global: Opcode) void {
+    inline fn defineVariable(self: *Parser, global: OpCode) void {
         if (self.compiler.scope_depth > 0) {
             self.markInitialized();
             return;
@@ -341,7 +357,7 @@ pub const Parser = struct {
     }
 
     fn whileStmt(self: *Parser) void {
-        const loop_start = self.compilingChunk.code.items.len;
+        const loop_start = self.compilingChunk.codeStack.items.len;
         self.consume(.LEFT_PAREN, "Expected '(' after 'while'");
         self.expression();
         self.consume(.RIGHT_PAREN, "Expected ')' after condition");
@@ -374,6 +390,73 @@ pub const Parser = struct {
         }
     }
 
+    inline fn addFunction(self: *Parser, token: *Token) void {
+        if (self.compiler.function_count >= MAX_FUNCTIONS) {
+            self.errorAtPrevious("Reached function definition limit");
+            return;
+        }
+        const func = CompileFunction {
+            .depth = self.compiler.scope_depth,
+            .name = token.*,
+            // TODO
+            .airtiy = 0
+        };
+        self.compiler.functions[self.compiler.function_count] = func;
+        self.compiler.function_count += 1;
+    }
+
+    inline fn declareFunction(self: *Parser) void {
+        if (self.compiler.scope_depth == 0) return;
+        const name = self.previous();
+        const function_count = self.compiler.function_count;
+        for (0..function_count) |i| {
+            const func = self.compiler.functions[function_count - 1 - i];
+            if (func.depth < self.compiler.scope_depth) break;
+            if (compareIdentifier(&func.name, name)) {
+                self.errorAtPrevious("Function name already exists in the current scope");
+            }
+        }
+        self.addFunction(name);
+    }
+
+    inline fn parseFunction(self: *Parser,  msg: []const u8) OpCode {
+        self.consume(.IDENTIFIER, msg);
+        self.declareFunction();
+        if (self.compiler.scope_depth > 0) return OpCode.RETURN;
+        return self.identifierConstant(self.previous());
+    }
+
+
+    inline fn fnDeclaration(self: *Parser) void {
+        const global = self.parseFunction("Expected function name");
+        const prev_frame = self.compiler.current_frame;
+        self.compiler.current_frame = self.compiler.function_count - 1;
+        var compiler_func = self.compiler.functions[self.compiler.current_frame];
+        self.beginScope();
+        self.consume(.LEFT_PAREN, "Expected '(' after function name");
+        if (!self.match(.RIGHT_PAREN)) {
+            while (true) {
+                self.expression();
+                if (compiler_func.airity == 255) self.errorAtPrevious("Cannot have more than 255 parameters in a function");
+                compiler_func.airity += 1;
+                if (self.match(.RIGHT_PAREN)) break;
+                if (self.match(.EOF)) self.errorAtPrevious("Expected ')' after function declaration");
+                self.consume(.COMMA, "Expected ',' after arg");
+            }
+        }
+        _ = self.advance();
+        self.consume(.LEFT_BRACE, "Expected '{' after function declaration");
+        while (!self.match(.RIGHT_BRACE)) {
+            self.statement();
+            if (self.match(.EOF)) self.errorAtPrevious("Expected '}'");
+        }
+        _ = self.advance();
+        self.endScope();
+        const func_const = self.makeConstant(Value.setFn(self.compiler.current_frame));
+        self.compiler.current_frame = prev_frame;
+        self.emitBytes(.SET_GLOBAL, func_const);
+    }
+
     inline fn varDeclaration(self: *Parser) void {
         const global = self.parseVariable("Expect variable name");
         if (self.match(.EQUAL)) {
@@ -387,18 +470,23 @@ pub const Parser = struct {
     }
 
     inline fn declaration(self: *Parser) void {
-        if (self.match(.VAR)) {
-            self.advance();
-            self.varDeclaration();
-        } else {
-            self.statement();
+        switch (self.current().ttype) {
+            .VAR => {
+                self.advance();
+                self.varDeclaration();
+            },
+            .FN => {
+                self.advance();
+                self.fnDeclaration();
+            },
+            else => self.statement(),
         }
     }
 
     inline fn namedVariable(self: *Parser, name: *const Token) void {
-        var getOp: Opcode = undefined;
-        var setOp: Opcode = undefined;
-        var arg: Opcode = undefined;
+        var getOp: OpCode = undefined;
+        var setOp: OpCode = undefined;
+        var arg: OpCode = undefined;
         if (self.resolveLocal(name)) |v| {
             arg = @enumFromInt(v);
             getOp = .GET_LOCAL;
@@ -418,10 +506,6 @@ pub const Parser = struct {
 
     pub fn variable(self: *Parser) void {
         self.namedVariable(self.previous());
-    }
-
-    pub fn function(self: *Parser) void {
-
     }
 
     pub fn and_(self: *Parser) void {
@@ -460,8 +544,8 @@ pub const Parser = struct {
         self.parsePrecedence(@intFromEnum(Precedence.UNARY));
 
         switch (op_type) {
-            .BANG => self.emitByte(Opcode.NOT),
-            .MINUS => self.emitByte(Opcode.NEGATE),
+            .BANG => self.emitByte(OpCode.NOT),
+            .MINUS => self.emitByte(OpCode.NEGATE),
             else => unreachable
         }
     }
@@ -494,9 +578,9 @@ pub const Parser = struct {
 
     pub fn literal(self: *Parser) void {
         switch (self.previous().ttype) {
-            .FALSE => self.emitByte(Opcode.FALSE),
-            .NIL => self.emitByte(Opcode.NIL),
-            .TRUE => self.emitByte(Opcode.TRUE),
+            .FALSE => self.emitByte(OpCode.FALSE),
+            .NIL => self.emitByte(OpCode.NIL),
+            .TRUE => self.emitByte(OpCode.TRUE),
             else => return
         }
     }

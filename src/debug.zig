@@ -3,7 +3,7 @@ const chunks = @import("chunks.zig");
 const values = @import("values.zig");
 const errors = @import("errors.zig");
 
-const Opcode = chunks.Opcode;
+const OpCode = chunks.OpCode;
 const Chunks = chunks.Chunks;
 
 
@@ -17,9 +17,9 @@ fn simpleInstruction(name: []const u8, offset: usize) !usize {
 
 fn jumpInstruction(name: []const u8, sign: isize, c: *Chunks, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
-    var jump = @intFromEnum(c.code.items[offset + 1]) << 8;
-    jump |= @intFromEnum(c.code.items[offset + 2]);
-    const index = @intFromEnum(c.code.items[offset + 1]);
+    var jump = @intFromEnum(c.code_list.items[offset + 1]) << 8;
+    jump |= @intFromEnum(c.code_list.items[offset + 2]);
+    const index = @intFromEnum(c.code_list.items[offset + 1]);
     const ioffset: isize = @intCast(offset);
     const ijump: isize = @intCast(jump);
     const target = ioffset + 3 + sign * ijump;
@@ -29,14 +29,14 @@ fn jumpInstruction(name: []const u8, sign: isize, c: *Chunks, offset: usize) !us
 
 fn byteInstruction(name: []const u8, c: *Chunks, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
-    const index = @intFromEnum(c.code.items[offset + 1]);
+    const index = @intFromEnum(c.code_list.items[offset + 1]);
     try stdout.print("{s} {d:0>3}\n", .{name, index});
     return offset + 2;
 }
 
 fn constantInstruction(name: []const u8, c: *Chunks, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
-    const index = @intFromEnum(c.code.items[offset + 1]);
+    const index = @intFromEnum(c.code_list.items[offset + 1]);
     try stdout.print("{s} {d:0>3} ", .{name, index});
     try values.printValue(c.values.items[index]);
     try stdout.print("\n", .{});
@@ -53,7 +53,7 @@ pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
         try stdout.print("{d:4} ", .{c.lines.items[offset]});
     }
 
-    const instruction: Opcode = c.code.items[offset];
+    const instruction: OpCode = c.code_list.items[offset];
     return switch (instruction) {
         .RETURN => try simpleInstruction("OP_RETURN", offset),
         .PRINT => try simpleInstruction("OP_PRINT", offset),
@@ -88,7 +88,7 @@ pub fn disassembleChunk(c: *Chunks, name: []const u8) !void {
     try stdout.print("== {s} ==\n", .{name});
 
     var offset: usize = 0;
-    while (offset < c.code.items.len){
+    while (offset < c.code_list.items.len){
         offset = try disassembleInstruction(c, offset);
     }
 }

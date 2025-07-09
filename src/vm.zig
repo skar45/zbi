@@ -9,7 +9,7 @@ const Allocator = std.mem.Allocator;
 const printValue = values.printValue;
 const Value = values.Value;
 const Chunks = c.Chunks;
-const OpCode = c.Opcode;
+const OpCode = c.OpCode;
 
 const STACK_SIZE = 256;
 const MAX_CALL_STACK = 256;
@@ -24,7 +24,8 @@ const VmError = error{
     InvalidArithmeticOp,
     OperandMustBeNumber,
     VarNameMustBeString,
-    VarUndefined
+    VarUndefined,
+    InvalidCall
 };
 
 const Context = struct {
@@ -87,7 +88,7 @@ pub const VM = struct {
         const globals = GlobalDeclMap.init(allocator.*);
         return VM {
             .chunks = chunks,
-            .instructions = chunks.code.items,
+            .instructions = chunks.code_list.items[0],
             .ip = 0,
             .stack = [_]Value{Value.setVoid()} ** STACK_SIZE,
             .stack_ptr = 0,
@@ -341,9 +342,14 @@ pub const VM = struct {
                     const airity = @intFromEnum(self.instructions[self.ip]);
                     self.ip += 1;
                     call_stack.base_ptr = self.stack_ptr - airity;
-                    const procedure = @intFromEnum(self.instructions[self.ip]);
-                    self.ip += 1;
+                    const procedure = self.read_val_from_chunk();
                     call_stack.ret_ip = self.ip;
+                    switch (procedure) {
+                        .closure => |closure| {
+
+                        },
+                        else => return error.InvalidCall
+                    }
                     self.ip = procedure;
                 },
                 .RETURN => {
