@@ -205,6 +205,7 @@ pub const Parser = struct {
 
     inline fn endScope(self: *Parser) void {
         self.compiler.scope_depth -= 1;
+        if (self.compiler.local_count == 0) return;
         const local_depth = self.compiler.locals[self.compiler.local_count - 1].depth;
         const scope_depth = self.compiler.scope_depth;
         while (self.compiler.local_count > 0 and local_depth > scope_depth) {
@@ -436,6 +437,7 @@ pub const Parser = struct {
         const global = self.parseFunction("Expected function name");
         const prev_frame = self.compiler.current_frame;
         self.compiler.current_frame = self.compiler.function_count - 1;
+        self.compilingChunk.addFrame();
         var compiler_func = self.compiler.functions[self.compiler.current_frame];
         self.beginScope();
         self.consume(.LEFT_PAREN, "Expected '(' after function name");

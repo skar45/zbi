@@ -382,6 +382,7 @@ pub const VM = struct {
                 error.OperandMustBeNumber => self.runtimeError("Operand must be a number."),
                 error.InvalidArithmeticOp => self.runtimeError("Can only do arithmetic operations on numbers."),
                 error.VarNameMustBeString => self.runtimeError("Variable names must be string"),
+                error.InvalidCall => self.runtimeError("Can only call functions"),
                 error.VarUndefined => {},
                 else => self.runtimeError("Unknown error.")
             }

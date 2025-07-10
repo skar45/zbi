@@ -48,7 +48,11 @@ pub const Chunks = struct {
     pub fn init() Chunks {
         var arena = ArenaAllocator.init(std.heap.page_allocator);
         const allocator = arena.allocator();
-        const code_list = ArrayList(ArrayList(OpCode)).initCapacity(allocator, 4096) catch |e| allocatorError(e);
+        var code_list = ArrayList(ArrayList(OpCode)).initCapacity(allocator, 4096) catch |e| allocatorError(e);
+
+        const init_frame = ArrayList(OpCode).initCapacity(allocator, 4096) catch |e| allocatorError(e);
+        code_list.append(init_frame) catch |e| allocatorError(e);
+
         const values_list = ArrayList(Value).initCapacity(allocator, 1024) catch |e| allocatorError(e);
         const lines = ArrayList(usize).initCapacity(allocator, 256) catch |e| allocatorError(e);
 
@@ -60,17 +64,18 @@ pub const Chunks = struct {
         };
     }
 
-    pub fn addFrame(self: *Chunks) void {
-        const code = ArrayList(OpCode).initCapacity(self._allocator, 4096) catch |e| allocatorError(e);
-        self.code_list.append(code);
+    pub inline fn addFrame(self: *Chunks) void {
+        const allocator = self._arena.allocator();
+        const code = ArrayList(OpCode).initCapacity(allocator, 4096) catch |e| allocatorError(e);
+        self.code_list.append(code) catch |e| allocatorError(e);
     }
 
-    pub fn writeChunk(self: *Chunks, frame_idx: usize, code: OpCode, line: usize) void {
+    pub inline fn writeChunk(self: *Chunks, frame_idx: usize, code: OpCode, line: usize) void {
         self.code_list.items[frame_idx].append(code) catch |e| allocatorError(e);
         self.lines.append(line) catch |e| allocatorError(e);
     }
 
-    pub fn addConstant(self: *Chunks, value: Value) OpCode {
+    pub inline fn addConstant(self: *Chunks, value: Value) OpCode {
         self.values.append(value) catch |e| allocatorError(e);
         // TODO: account for overflow
         return @enumFromInt(self.values.items.len - 1);
