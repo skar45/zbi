@@ -68,7 +68,6 @@ pub const Chunks = struct {
     pub fn writeChunk(self: *Chunks, frame_idx: usize, code: OpCode, line: usize) void {
         self.code_list.items[frame_idx].append(code) catch |e| allocatorError(e);
         self.lines.append(line) catch |e| allocatorError(e);
-        self.code_list.append(code) catch |e| allocatorError(e);
     }
 
     pub fn addConstant(self: *Chunks, value: Value) OpCode {

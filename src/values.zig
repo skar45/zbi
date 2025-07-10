@@ -17,7 +17,7 @@ pub const Value = union(enum) {
 
     pub fn setFn(code_ptr: usize) Value {
         return Value {
-            .function = code_ptr
+            .function = FnObj.init(code_ptr)
         };
     }
 

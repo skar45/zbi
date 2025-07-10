@@ -44,6 +44,7 @@ pub const Compiler = struct {
         return Compiler {
             .locals = undefined,
             .functions = undefined,
+            .function_count = 0,
             .local_count = 0,
             .scope_depth = 0,
             .current_frame = 0
@@ -85,12 +86,16 @@ pub const Parser = struct {
         return &self.token_buf[1];
     }
 
-    inline fn currentChunkCount(self: *Parser) usize {
-        return self.compilingChunk.codeStack.items.len;
-    }
-
     inline fn currentFrame(self: *Parser) u16 {
         return self.compiler.current_frame;
+    }
+
+    inline fn getCurrentCallFrameCode(self: *Parser) []OpCode {
+        return self.compilingChunk.code_list.items[self.currentFrame()].items;
+    }
+
+    inline fn getCurrentCodeLen(self: *Parser) usize {
+        return self.getCurrentCallFrameCode().len;
     }
 
     inline fn errorAt(self: *Parser, token: *const Token, message: []const u8) void {
@@ -142,14 +147,14 @@ pub const Parser = struct {
         self.compilingChunk.writeChunk(self.currentFrame(), byte, self.previous().line);
     }
 
-    inline fn emitBytes(self: *Parser, byte1: OpCode, byte2: Opcode) void {
+    inline fn emitBytes(self: *Parser, byte1: OpCode, byte2: OpCode) void {
         self.emitByte(byte1);
         self.emitByte(byte2);
     }
 
     inline fn emitLoop(self: *Parser, start: usize) void {
         self.emitByte(.LOOP);
-        const offset = self.currentChunkCount() - start + 2;
+        const offset = self.getCurrentCodeLen() - start + 2;
         if (offset > UINT16_MAX) self.errorAtCurrent("Loop body above maximum");
         self.emitByte(@intFromEnum((offset >> 8) & 0xFF));
         self.emitByte(@intFromEnum(offset & 0xFF));
@@ -159,7 +164,7 @@ pub const Parser = struct {
         self.emitByte(instruction);
         self.emitByte(@enumFromInt(0xFF));
         self.emitByte(@enumFromInt(0xFF));
-        return self.currentChunkCount() - 2;
+        return self.getCurrentCodeLen() - 2;
     }
 
     inline fn emitReturn(self: *Parser) void {
@@ -176,13 +181,13 @@ pub const Parser = struct {
     }
 
     inline fn patchJump(self: *Parser, offset: usize) void {
-        const jump = self.currentChunkCount() - offset - 2;
+        const jump = self.getCurrentCodeLen() - offset - 2;
         if (jump > UINT16_MAX or jump < 0) {
             self.errorAtCurrent("Jump error");
         }
 
-        self.compilingChunk.codeStack.items[offset] = @enumFromInt((jump >> 8) & 0xFF);
-        self.compilingChunk.codeStack.items[offset + 1] = @enumFromInt(jump & 0xFF);
+        self.getCurrentCallFrameCode()[offset] = @enumFromInt((jump >> 8) & 0xFF);
+        self.getCurrentCallFrameCode()[offset + 1] = @enumFromInt(jump & 0xFF);
     }
 
     pub inline fn endCompiler(self: *Parser) void {
@@ -357,7 +362,7 @@ pub const Parser = struct {
     }
 
     fn whileStmt(self: *Parser) void {
-        const loop_start = self.compilingChunk.codeStack.items.len;
+        const loop_start = self.getCurrentCodeLen();
         self.consume(.LEFT_PAREN, "Expected '(' after 'while'");
         self.expression();
         self.consume(.RIGHT_PAREN, "Expected ')' after condition");
@@ -390,7 +395,7 @@ pub const Parser = struct {
         }
     }
 
-    inline fn addFunction(self: *Parser, token: *Token) void {
+    inline fn addFunction(self: *Parser, token: *const Token) void {
         if (self.compiler.function_count >= MAX_FUNCTIONS) {
             self.errorAtPrevious("Reached function definition limit");
             return;
@@ -399,7 +404,7 @@ pub const Parser = struct {
             .depth = self.compiler.scope_depth,
             .name = token.*,
             // TODO
-            .airtiy = 0
+            .airity = 0
         };
         self.compiler.functions[self.compiler.function_count] = func;
         self.compiler.function_count += 1;
@@ -452,8 +457,11 @@ pub const Parser = struct {
         }
         _ = self.advance();
         self.endScope();
-        const func_const = self.makeConstant(Value.setFn(self.compiler.current_frame));
+
         self.compiler.current_frame = prev_frame;
+        const func_const = self.makeConstant(Value.setFn(self.compiler.current_frame));
+
+        self.emitBytes(.DEFINE_GLOBAL, global);
         self.emitBytes(.SET_GLOBAL, func_const);
     }
 
@@ -528,6 +536,7 @@ pub const Parser = struct {
     pub fn number(self: *Parser) void {
         const num = std.fmt.parseFloat(f64, self.previous().start.items) catch {
             self.errorAt(self.previous(), "Could not parse float! \n");
+            return;
         };
         const value = Value.setNumber(num);
         self.emitConstant(value);

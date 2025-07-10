@@ -15,11 +15,11 @@ fn simpleInstruction(name: []const u8, offset: usize) !usize {
     return offset + 1;
 }
 
-fn jumpInstruction(name: []const u8, sign: isize, c: *Chunks, offset: usize) !usize {
+fn jumpInstruction(name: []const u8, sign: isize, c: *Chunks, segment: usize, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
-    var jump = @intFromEnum(c.code_list.items[offset + 1]) << 8;
-    jump |= @intFromEnum(c.code_list.items[offset + 2]);
-    const index = @intFromEnum(c.code_list.items[offset + 1]);
+    var jump = @intFromEnum(c.code_list.items[segment].items[offset + 1]) << 8;
+    jump |= @intFromEnum(c.code_list.items[segment].items[offset + 2]);
+    const index = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
     const ioffset: isize = @intCast(offset);
     const ijump: isize = @intCast(jump);
     const target = ioffset + 3 + sign * ijump;
@@ -27,16 +27,16 @@ fn jumpInstruction(name: []const u8, sign: isize, c: *Chunks, offset: usize) !us
     return offset + 3;
 }
 
-fn byteInstruction(name: []const u8, c: *Chunks, offset: usize) !usize {
+fn byteInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
-    const index = @intFromEnum(c.code_list.items[offset + 1]);
+    const index = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
     try stdout.print("{s} {d:0>3}\n", .{name, index});
     return offset + 2;
 }
 
-fn constantInstruction(name: []const u8, c: *Chunks, offset: usize) !usize {
+fn constantInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
-    const index = @intFromEnum(c.code_list.items[offset + 1]);
+    const index = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
     try stdout.print("{s} {d:0>3} ", .{name, index});
     try values.printValue(c.values.items[index]);
     try stdout.print("\n", .{});
@@ -44,7 +44,7 @@ fn constantInstruction(name: []const u8, c: *Chunks, offset: usize) !usize {
 
 }
 
-pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
+pub fn disassembleInstruction(c: *Chunks, segment: usize, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("{d:0>4} ", .{offset});
     if (offset > 0 and c.lines.items[offset] == c.lines.items[offset - 1]) {
@@ -53,11 +53,11 @@ pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
         try stdout.print("{d:4} ", .{c.lines.items[offset]});
     }
 
-    const instruction: OpCode = c.code_list.items[offset];
+    const instruction: OpCode = c.code_list.items[segment].items[offset];
     return switch (instruction) {
         .RETURN => try simpleInstruction("OP_RETURN", offset),
         .PRINT => try simpleInstruction("OP_PRINT", offset),
-        .CONSTANT => try constantInstruction("OP_CONSTANT", c, offset),
+        .CONSTANT => try constantInstruction("OP_CONSTANT", c, segment, offset),
         .NIL => try simpleInstruction("OP_NIL", offset),
         .TRUE => try simpleInstruction("OP_TRUE", offset),
         .FALSE => try simpleInstruction("OP_FALSE", offset),
@@ -71,14 +71,14 @@ pub fn disassembleInstruction(c: *Chunks, offset: usize) !usize {
         .DIVIDE => try simpleInstruction("OP_DIVIDE", offset),
         .NEGATE => try simpleInstruction("OP_NEGATE", offset),
         .POP => try simpleInstruction("OP_POP", offset),
-        .GET_LOCAL => try byteInstruction("OP_GET_LOCAL", c, offset),
-        .SET_LOCAL => try byteInstruction("OP_SET_LOCAL", c, offset),
-        .DEFINE_GLOBAL => try constantInstruction("OP_DEFINE_GLOBAL", c, offset),
-        .GET_GLOBAL => try constantInstruction("OP_GET_GLOBAL", c, offset),
-        .SET_GLOBAL => try constantInstruction("OP_SET_GLOBAL", c, offset),
-        .JUMP => try jumpInstruction("OP_JUMP", 1, c, offset),
-        .JUMP_IF_FALSE => try jumpInstruction("OP_JUMP_IF_ELSE", 1, c, offset),
-        .LOOP => try jumpInstruction("OP_LOOP", -1, c, offset),
+        .GET_LOCAL => try byteInstruction("OP_GET_LOCAL", c, segment, offset),
+        .SET_LOCAL => try byteInstruction("OP_SET_LOCAL", c, segment, offset),
+        .DEFINE_GLOBAL => try constantInstruction("OP_DEFINE_GLOBAL", c, segment, offset),
+        .GET_GLOBAL => try constantInstruction("OP_GET_GLOBAL", c, segment, offset),
+        .SET_GLOBAL => try constantInstruction("OP_SET_GLOBAL", c, segment, offset),
+        .JUMP => try jumpInstruction("OP_JUMP", 1, c, segment, offset),
+        .JUMP_IF_FALSE => try jumpInstruction("OP_JUMP_IF_ELSE", 1, c, segment, offset),
+        .LOOP => try jumpInstruction("OP_LOOP", -1, c, segment, offset),
         else => error.UnknownOpcode
     };
 }
@@ -88,7 +88,9 @@ pub fn disassembleChunk(c: *Chunks, name: []const u8) !void {
     try stdout.print("== {s} ==\n", .{name});
 
     var offset: usize = 0;
-    while (offset < c.code_list.items.len){
-        offset = try disassembleInstruction(c, offset);
+    for (0..c.code_list.items.len) |idx| {
+        while (offset < c.code_list.items.len){
+            offset = try disassembleInstruction(c, idx, offset);
+        }
     }
 }

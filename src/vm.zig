@@ -88,7 +88,7 @@ pub const VM = struct {
         const globals = GlobalDeclMap.init(allocator.*);
         return VM {
             .chunks = chunks,
-            .instructions = chunks.code_list.items[0],
+            .instructions = chunks.code_list.items[0].items,
             .ip = 0,
             .stack = [_]Value{Value.setVoid()} ** STACK_SIZE,
             .stack_ptr = 0,
@@ -115,9 +115,18 @@ pub const VM = struct {
             }
 
         }
+        var segment: usize = 0;
+        for (0..self.chunks.code_list.items.len) |i| {
+            if (@intFromPtr(self.chunks.code_list.items[i].items.ptr) == 
+                @intFromPtr(self.instructions.ptr)
+            ) {
+                segment = i;
+                break;
+            }
+        }
         std.debug.print("\n", .{});
         const off: usize = self.ip;
-        _ = try debug.disassembleInstruction(self.chunks, off);
+        _ = try debug.disassembleInstruction(self.chunks, segment, off);
     }
 
     fn runtimeError(self: *VM, format: []const u8) void {
@@ -345,9 +354,7 @@ pub const VM = struct {
                     const procedure = self.read_val_from_chunk();
                     call_stack.ret_ip = self.ip;
                     switch (procedure) {
-                        .closure => |closure| {
-
-                        },
+                        .closure => |_| unreachable,
                         else => return error.InvalidCall
                     }
                     self.ip = procedure;
