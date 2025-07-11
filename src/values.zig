@@ -15,9 +15,9 @@ pub const Value = union(enum) {
     nil,
     void,
 
-    pub fn setFn(code_ptr: usize) Value {
+    pub fn setFn(code_ptr: usize, airity: u8) Value {
         return Value {
-            .function = FnObj.init(code_ptr)
+            .function = FnObj.init(code_ptr, airity)
         };
     }
 
@@ -208,10 +208,12 @@ pub const TableHash = struct {
 
 pub const FnObj = struct {
     code_ptr: usize,
+    airity: u8,
 
-    pub fn init(code_ptr: usize) FnObj {
+    pub fn init(code_ptr: usize, airity: u8) FnObj {
         return FnObj {
-            .code_ptr = code_ptr
+            .code_ptr = code_ptr,
+            .airity = airity
         };
     }
 };
@@ -219,6 +221,7 @@ pub const FnObj = struct {
 pub const ClosureObj = struct {
     values: ArrayList(Value),
     code_ptr: usize,
+    airity: u8,
     _allocator: *const Allocator,
 
     pub fn init(allocator: *const Allocator, code_ptr: usize) ClosureObj {
@@ -305,8 +308,9 @@ pub fn printValue(value: Value) !void {
                 }
             }
         },
+        .function => |f| try stdout.print("fn {d}({d})", .{f.code_ptr, f.airity}),
         .nil => try stdout.print("nil ", .{}),
         .void => try stdout.print("void", .{}),
-        else => try stdout.print("value formattin not implemented", .{}),
+        else => try stdout.print("value formatting not implemented", .{}),
     }
 }

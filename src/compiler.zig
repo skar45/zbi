@@ -44,7 +44,8 @@ pub const Compiler = struct {
         return Compiler {
             .locals = undefined,
             .functions = undefined,
-            .function_count = 0,
+            // skip main function
+            .function_count = 1,
             .local_count = 0,
             .scope_depth = 0,
             .current_frame = 0
@@ -425,6 +426,7 @@ pub const Parser = struct {
         self.addFunction(name);
     }
 
+
     inline fn parseFunction(self: *Parser,  msg: []const u8) OpCode {
         self.consume(.IDENTIFIER, msg);
         self.declareFunction();
@@ -432,18 +434,20 @@ pub const Parser = struct {
         return self.identifierConstant(self.previous());
     }
 
-
     inline fn fnDeclaration(self: *Parser) void {
+        std.debug.print("declaring function \n", .{});
         const global = self.parseFunction("Expected function name");
         const prev_frame = self.compiler.current_frame;
-        self.compiler.current_frame = self.compiler.function_count - 1;
         self.compilingChunk.addFrame();
+        self.compiler.current_frame += 1;
         var compiler_func = self.compiler.functions[self.compiler.current_frame];
         self.beginScope();
+
         self.consume(.LEFT_PAREN, "Expected '(' after function name");
         if (!self.match(.RIGHT_PAREN)) {
             while (true) {
-                self.expression();
+                const arg = self.parseVariable("Expect variable name");
+                self.defineVariable(arg);
                 if (compiler_func.airity == 255) self.errorAtPrevious("Cannot have more than 255 parameters in a function");
                 compiler_func.airity += 1;
                 if (self.match(.RIGHT_PAREN)) break;
@@ -452,19 +456,31 @@ pub const Parser = struct {
             }
         }
         _ = self.advance();
+
         self.consume(.LEFT_BRACE, "Expected '{' after function declaration");
         while (!self.match(.RIGHT_BRACE)) {
             self.statement();
             if (self.match(.EOF)) self.errorAtPrevious("Expected '}'");
         }
         _ = self.advance();
+
         self.endScope();
-
         self.compiler.current_frame = prev_frame;
-        const func_const = self.makeConstant(Value.setFn(self.compiler.current_frame));
 
+//         const func_const = self.makeConstant(Value.setFn(self.compiler.current_frame, compiler_func.airity));
+        self.emitConstant(Value.setFn(self.compiler.current_frame, compiler_func.airity));
         self.emitBytes(.DEFINE_GLOBAL, global);
-        self.emitBytes(.SET_GLOBAL, func_const);
+//         self.emitBytes(.SET_GLOBAL, global);
+    }
+
+    inline fn findFunction(self: *Parser, name: *const Token) ?usize {
+        for (0..self.compiler.function_count) |i| {
+            const func_name = self.compiler.functions[i].name;
+            if (self.compareIdentifier(name, func_name)) {
+                return i;
+            }
+        }
+        return null;
     }
 
     inline fn varDeclaration(self: *Parser) void {
@@ -514,8 +530,31 @@ pub const Parser = struct {
         }
     }
 
+    inline fn gatArgLen(self: *Parser) OpCode {
+        var args: u8 = 0;
+        if (self.match(.RIGHT_PAREN)) {
+            _ = self.advance();
+            return @enumFromInt(args);
+        }
+        self.expression();
+        args += 1;
+        while (self.match(.COMMA)) {
+            _ = self.advance();
+            self.expression();
+            args += 1;
+        }
+        if (args > 255) self.errorAtPrevious("Function calls are limited to 255 arguments");
+        self.consume(.RIGHT_PAREN, "Expected ')' after args");
+        return @enumFromInt(args);
+    }
+
     pub fn variable(self: *Parser) void {
         self.namedVariable(self.previous());
+    }
+
+    pub fn call(self: *Parser) void {
+        const arg_len = self.gatArgLen();
+        self.emitBytes(.CALL, arg_len);
     }
 
     pub fn and_(self: *Parser) void {

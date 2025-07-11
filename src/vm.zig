@@ -25,7 +25,8 @@ const VmError = error{
     OperandMustBeNumber,
     VarNameMustBeString,
     VarUndefined,
-    InvalidCall
+    InvalidCall,
+    ArgsMismatch,
 };
 
 const Context = struct {
@@ -354,10 +355,21 @@ pub const VM = struct {
                     const procedure = self.read_val_from_chunk();
                     call_stack.ret_ip = self.ip;
                     switch (procedure) {
+                        .function => |f| {
+                            if (airity != f.airity) {
+                                var buf: [256]u8 = undefined;
+                                _ = std.fmt.bufPrint(buf[0..], "Expected {d} args", .{airity}) catch {
+                                    std.debug.print("Could not format error variable", .{});
+                                    std.process.exit(64);
+                                };
+                                self.runtimeError(&buf);
+                                return error.ArgsMismatch;
+                            }
+                            self.ip = f.code_ptr;
+                        },
                         .closure => |_| unreachable,
                         else => return error.InvalidCall
                     }
-                    self.ip = procedure;
                 },
                 .RETURN => {
                     // RET VAL
@@ -384,6 +396,7 @@ pub const VM = struct {
                 error.VarNameMustBeString => self.runtimeError("Variable names must be string"),
                 error.InvalidCall => self.runtimeError("Can only call functions"),
                 error.VarUndefined => {},
+                error.ArgsMismatch => {},
                 else => self.runtimeError("Unknown error.")
             }
             return InterpretResult.INTERPRET_RUNTIME_ERROR;

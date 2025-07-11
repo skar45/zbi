@@ -10,6 +10,7 @@ const string = Parser.string;
 const literal = Parser.literal;
 const and_ = Parser.and_;
 const or_ = Parser.or_;
+const call = Parser.call;
 
 pub const Precedence = enum(u8) {
     NONE = 0,
@@ -51,7 +52,7 @@ pub const rules =  blk: {
         }
     }.lambda;
 
-    setRule(&r, .LEFT_PAREN, grouping, null, .CALL);
+    setRule(&r, .LEFT_PAREN, grouping, call, .CALL);
     setRule(&r, .RIGHT_PAREN, null, null, .NONE);
     setRule(&r, .LEFT_BRACE, null, null, .NONE);
     setRule(&r, .RIGHT_BRACE, null, null, .NONE);

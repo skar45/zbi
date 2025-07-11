@@ -11,8 +11,16 @@ pub const ENABLE_LOGGING = true;
 
 fn simpleInstruction(name: []const u8, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
-    try stdout.print("{s} \n", .{name});
+    try stdout.print("{s:<16} \n", .{name});
     return offset + 1;
+}
+
+fn callInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) !usize {
+    const stdout = std.io.getStdOut().writer();
+    const function_idx = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
+    const args = @intFromEnum(c.code_list.items[segment].items[offset + 2]);
+    try stdout.print("{s:<16} {d:0>3}({d}) \n", .{name, function_idx, args});
+    return offset + 3;
 }
 
 fn jumpInstruction(name: []const u8, sign: isize, c: *Chunks, segment: usize, offset: usize) !usize {
@@ -23,21 +31,21 @@ fn jumpInstruction(name: []const u8, sign: isize, c: *Chunks, segment: usize, of
     const ioffset: isize = @intCast(offset);
     const ijump: isize = @intCast(jump);
     const target = ioffset + 3 + sign * ijump;
-    try stdout.print("{s} {d:0>3} -> {d}\n", .{name, index, target});
+    try stdout.print("{s:<16} {d:0>3} -> {d}\n", .{name, index, target});
     return offset + 3;
 }
 
 fn byteInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
     const index = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
-    try stdout.print("{s} {d:0>3}\n", .{name, index});
+    try stdout.print("{s:<16} {d:0>3}\n", .{name, index});
     return offset + 2;
 }
 
 fn constantInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
     const index = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
-    try stdout.print("{s} {d:0>3} ", .{name, index});
+    try stdout.print("{s:<16} {d:5} ", .{name, index});
     try values.printValue(c.values.items[index]);
     try stdout.print("\n", .{});
     return offset + 2;
@@ -79,7 +87,8 @@ pub fn disassembleInstruction(c: *Chunks, segment: usize, offset: usize) !usize 
         .JUMP => try jumpInstruction("OP_JUMP", 1, c, segment, offset),
         .JUMP_IF_FALSE => try jumpInstruction("OP_JUMP_IF_ELSE", 1, c, segment, offset),
         .LOOP => try jumpInstruction("OP_LOOP", -1, c, segment, offset),
-        else => error.UnknownOpcode
+        .CALL => try callInstruction("OP_CALL", c, segment, offset),
+        _ => return error.UnknownOpcode
     };
 }
 
@@ -89,7 +98,10 @@ pub fn disassembleChunk(c: *Chunks, name: []const u8) !void {
 
     var offset: usize = 0;
     for (0..c.code_list.items.len) |idx| {
-        while (offset < c.code_list.items.len){
+        std.debug.print("\n", .{});
+        std.debug.print("=== {d} ===\n", .{idx});
+        offset = 0;
+        while (offset < c.code_list.items[idx].items.len){
             offset = try disassembleInstruction(c, idx, offset);
         }
     }
