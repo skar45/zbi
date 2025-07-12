@@ -294,6 +294,8 @@ pub const VM = struct {
                     switch (name) {
                         .string => |s| {
                             if (self.globals.get(s.str)) |val| {
+                                try printValue(val);
+                                std.debug.print("\n", .{});
                                 self.push(val);
                             } else {
                                 var buf: [256]u8 = undefined;
@@ -346,16 +348,17 @@ pub const VM = struct {
                     _ = self.pop();
                 },
                 .CALL => {
-                    // CALL ARGLEN FN
+                    // ARGLEN FN
                     self.call_stack_ptr += 1;
                     var call_stack = self.call_stack[self.call_stack_ptr];
                     const airity = @intFromEnum(self.instructions[self.ip]);
                     self.ip += 1;
                     call_stack.base_ptr = self.stack_ptr - airity;
-                    const procedure = self.read_val_from_chunk();
+                    const procedure = try self.peek(airity);
                     call_stack.ret_ip = self.ip;
                     switch (procedure) {
                         .function => |f| {
+                            std.debug.print("airity {d}\n", .{f.airity});
                             if (airity != f.airity) {
                                 var buf: [256]u8 = undefined;
                                 _ = std.fmt.bufPrint(buf[0..], "Expected {d} args", .{airity}) catch {
@@ -365,7 +368,8 @@ pub const VM = struct {
                                 self.runtimeError(&buf);
                                 return error.ArgsMismatch;
                             }
-                            self.ip = f.code_ptr;
+                            self.ip = 0;
+                            self.instructions = self.chunks.code_list.items[f.code_ptr].items;
                         },
                         .closure => |_| unreachable,
                         else => return error.InvalidCall

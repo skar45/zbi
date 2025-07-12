@@ -19,7 +19,7 @@ fn callInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) 
     const stdout = std.io.getStdOut().writer();
     const function_idx = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
     const args = @intFromEnum(c.code_list.items[segment].items[offset + 2]);
-    try stdout.print("{s:<16} {d:0>3}({d}) \n", .{name, function_idx, args});
+    try stdout.print("{s:<16} {d}({d}) \n", .{name, function_idx, args});
     return offset + 3;
 }
 
