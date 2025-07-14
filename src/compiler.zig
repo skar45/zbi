@@ -25,6 +25,7 @@ pub const CompileFunction = struct {
     airity: u8,
     depth: u32,
     name: Token,
+    has_ret: bool,
 };
 
 pub const Local = struct {
@@ -89,6 +90,10 @@ pub const Parser = struct {
 
     inline fn currentFrame(self: *Parser) u16 {
         return self.compiler.current_frame;
+    }
+
+    inline fn getCurrentCompilingFunction(self: *Parser) *CompileFunction {
+        return &self.compiler.functions[self.compiler.current_frame];
     }
 
     inline fn getCurrentCallFrameCode(self: *Parser) []OpCode {
@@ -329,6 +334,89 @@ pub const Parser = struct {
         self.emitBytes(.DEFINE_GLOBAL, global);
     }
 
+    inline fn addFunction(self: *Parser, token: *const Token) void {
+        if (self.compiler.function_count >= MAX_FUNCTIONS) {
+            self.errorAtPrevious("Reached function definition limit");
+            return;
+        }
+        const func = CompileFunction {
+            .depth = self.compiler.scope_depth,
+            .name = token.*,
+            .has_ret = false,
+            .airity = 0
+        };
+        self.compiler.functions[self.compiler.function_count] = func;
+        self.compiler.function_count += 1;
+    }
+
+    inline fn declareFunction(self: *Parser) void {
+        if (self.compiler.scope_depth == 0) return;
+        const name = self.previous();
+        const function_count = self.compiler.function_count;
+        for (0..function_count) |i| {
+            const func = self.compiler.functions[function_count - 1 - i];
+            if (func.depth < self.compiler.scope_depth) break;
+            if (compareIdentifier(&func.name, name)) {
+                self.errorAtPrevious("Function name already exists in the current scope");
+            }
+        }
+        self.addFunction(name);
+    }
+
+    inline fn parseFunction(self: *Parser,  msg: []const u8) OpCode {
+        self.consume(.IDENTIFIER, msg);
+        self.declareFunction();
+        if (self.compiler.scope_depth > 0) return OpCode.RETURN;
+        return self.identifierConstant(self.previous());
+    }
+
+    inline fn parseFunctionBody(self: *Parser) void {
+        self.consume(.LEFT_BRACE, "Expected '{' after function declaration");
+        while (!self.match(.RIGHT_BRACE)) {
+            self.statement();
+            if (self.match(.EOF)) self.errorAtPrevious("Expected '}'");
+        }
+        _ = self.advance();
+    }
+
+    inline fn parseFunctionParams(self: *Parser, function: *CompileFunction) void {
+        self.consume(.LEFT_PAREN, "Expected '(' after function name");
+        if (!self.match(.RIGHT_PAREN)) {
+            while (true) {
+                const arg = self.parseVariable("Expect variable name");
+                self.defineVariable(arg);
+                if (function.airity == 255) self.errorAtPrevious("Cannot have more than 255 parameters in a function");
+                function.airity += 1;
+                if (self.match(.RIGHT_PAREN)) break;
+                if (self.match(.EOF)) self.errorAtPrevious("Expected ')' after function declaration");
+                self.consume(.COMMA, "Expected ',' after arg");
+            }
+        }
+        _ = self.advance();
+    }
+
+    inline fn fnDeclaration(self: *Parser) void {
+        const global = self.parseFunction("Expected function name");
+        const prev_frame = self.compiler.current_frame;
+        self.compilingChunk.addCodeSegment();
+        self.compiler.current_frame += 1;
+        const compiler_func = self.getCurrentCompilingFunction();
+
+        self.beginScope();
+        self.parseFunctionParams(compiler_func);
+        self.parseFunctionBody();
+        self.endScope();
+
+        if (!compiler_func.has_ret) {
+            self.emitReturn();
+            self.emitByte(.NIL);
+        }
+        self.emitConstant(Value.setFn(self.compiler.current_frame, compiler_func.airity));
+        self.emitBytes(.DEFINE_GLOBAL, global);
+
+        self.compiler.current_frame = prev_frame;
+    }
+
     inline fn expression(self: *Parser) void {
         self.parsePrecedence(@intFromEnum(Precedence.ASSIGNMENT));
     }
@@ -377,6 +465,26 @@ pub const Parser = struct {
         self.emitByte(.POP);
     }
 
+    fn returnStmt(self: *Parser) void {
+        if (self.currentFrame() == 0) {
+            self.errorAtPrevious("Cannot return outside of function");
+        }
+
+        const curr_fn = self.getCurrentCompilingFunction();
+        curr_fn.has_ret = true;
+
+        self.emitReturn();
+        switch (self.current().ttype) {
+            .SEMICOLON => {
+                self.emitByte(.NIL);
+                self.advance();
+                return;
+            },
+            else => self.expression()
+        }
+        self.consume(.SEMICOLON, "Expected ';' after return");
+    }
+
     fn statement(self: *Parser) void {
         switch (self.current().ttype) {
             .PRINT => {
@@ -393,84 +501,12 @@ pub const Parser = struct {
                 self.block();
                 self.endScope();
             },
+            .RETURN => {
+                self.advance();
+                self.returnStmt();
+            },
             else => self.expressionStmt()
         }
-    }
-
-    inline fn addFunction(self: *Parser, token: *const Token) void {
-        if (self.compiler.function_count >= MAX_FUNCTIONS) {
-            self.errorAtPrevious("Reached function definition limit");
-            return;
-        }
-        const func = CompileFunction {
-            .depth = self.compiler.scope_depth,
-            .name = token.*,
-            // TODO
-            .airity = 0
-        };
-        self.compiler.functions[self.compiler.function_count] = func;
-        self.compiler.function_count += 1;
-    }
-
-    inline fn declareFunction(self: *Parser) void {
-        if (self.compiler.scope_depth == 0) return;
-        const name = self.previous();
-        const function_count = self.compiler.function_count;
-        for (0..function_count) |i| {
-            const func = self.compiler.functions[function_count - 1 - i];
-            if (func.depth < self.compiler.scope_depth) break;
-            if (compareIdentifier(&func.name, name)) {
-                self.errorAtPrevious("Function name already exists in the current scope");
-            }
-        }
-        self.addFunction(name);
-    }
-
-
-    inline fn parseFunction(self: *Parser,  msg: []const u8) OpCode {
-        self.consume(.IDENTIFIER, msg);
-        self.declareFunction();
-        if (self.compiler.scope_depth > 0) return OpCode.RETURN;
-        return self.identifierConstant(self.previous());
-    }
-
-    inline fn fnDeclaration(self: *Parser) void {
-        std.debug.print("declaring function \n", .{});
-        const global = self.parseFunction("Expected function name");
-        const prev_frame = self.compiler.current_frame;
-        self.compilingChunk.addFrame();
-        self.compiler.current_frame += 1;
-        var compiler_func = self.compiler.functions[self.compiler.current_frame];
-        self.beginScope();
-
-        self.consume(.LEFT_PAREN, "Expected '(' after function name");
-        if (!self.match(.RIGHT_PAREN)) {
-            while (true) {
-                const arg = self.parseVariable("Expect variable name");
-                self.defineVariable(arg);
-                if (compiler_func.airity == 255) self.errorAtPrevious("Cannot have more than 255 parameters in a function");
-                compiler_func.airity += 1;
-                if (self.match(.RIGHT_PAREN)) break;
-                if (self.match(.EOF)) self.errorAtPrevious("Expected ')' after function declaration");
-                self.consume(.COMMA, "Expected ',' after arg");
-            }
-        }
-        _ = self.advance();
-
-        self.consume(.LEFT_BRACE, "Expected '{' after function declaration");
-        while (!self.match(.RIGHT_BRACE)) {
-            self.statement();
-            if (self.match(.EOF)) self.errorAtPrevious("Expected '}'");
-        }
-        _ = self.advance();
-
-        self.endScope();
-        self.compiler.current_frame = prev_frame;
-
-//         const func_const = self.makeConstant(Value.setFn(self.compiler.current_frame, compiler_func.airity));
-        self.emitConstant(Value.setFn(self.compiler.current_frame, compiler_func.airity));
-        self.emitBytes(.DEFINE_GLOBAL, global);
-//         self.emitBytes(.SET_GLOBAL, global);
     }
 
     inline fn findFunction(self: *Parser, name: *const Token) ?usize {

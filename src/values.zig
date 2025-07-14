@@ -207,12 +207,12 @@ pub const TableHash = struct {
 };
 
 pub const FnObj = struct {
-    code_ptr: usize,
+    fn_segment: usize,
     airity: u8,
 
-    pub fn init(code_ptr: usize, airity: u8) FnObj {
+    pub fn init(fn_segment: usize, airity: u8) FnObj {
         return FnObj {
-            .code_ptr = code_ptr,
+            .fn_segment = fn_segment,
             .airity = airity
         };
     }
@@ -308,7 +308,7 @@ pub fn printValue(value: Value) !void {
                 }
             }
         },
-        .function => |f| try stdout.print("fn {d}({d})", .{f.code_ptr, f.airity}),
+        .function => |f| try stdout.print("fn {d}({d})", .{f.fn_segment, f.airity}),
         .nil => try stdout.print("nil ", .{}),
         .void => try stdout.print("void", .{}),
         else => try stdout.print("value formatting not implemented", .{}),

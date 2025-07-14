@@ -105,17 +105,17 @@ pub const VM = struct {
     }
 
     fn debug_vm(self: *VM) !void {
-        for (self.stack) |v| {
-            switch (v) {
-                .void => break,
-                else => {
-                    std.debug.print("[ ", .{});
-                    printValue(v) catch unreachable;
-                    std.debug.print(" ]", .{});
-                }
-            }
-
-        }
+//         for (self.stack) |v| {
+//             switch (v) {
+//                 .void => break,
+//                 else => {
+//                     std.debug.print("[ ", .{});
+//                     printValue(v) catch unreachable;
+//                     std.debug.print(" ]", .{});
+//                 }
+//             }
+// 
+//         }
         var segment: usize = 0;
         for (0..self.chunks.code_list.items.len) |i| {
             if (@intFromPtr(self.chunks.code_list.items[i].items.ptr) == 
@@ -213,20 +213,24 @@ pub const VM = struct {
         }
     }
 
-    inline fn read_val_from_chunk(self: *VM) Value {
+    inline fn readValFromChunk(self: *VM) Value {
         const i = @intFromEnum(self.instructions[self.ip]);
         self.ip += 1;
         return self.chunks.values.items[i];
     }
 
     /// jump offset is encoded in 2 bytes of instructions
-    inline fn get_jump_offset(self: *VM) usize {
+    inline fn getJumpOffset(self: *VM) usize {
         const offset: usize = @intFromEnum(self.instructions[self.ip]) << 8
                             | @intFromEnum(self.instructions[self.ip + 1]);
         return offset;
     }
 
-    fn run_vm(self: *VM) !void {
+    inline fn getFnOpcode(self: *VM, segment: usize) []OpCode {
+        return self.chunks.code_list.items[segment].items;
+    }
+
+    fn runVM(self: *VM) !void {
         while (self.instructions.len > self.ip) {
             if (comptime debug.ENABLE_LOGGING) {
                 try self.debug_vm();
@@ -235,7 +239,7 @@ pub const VM = struct {
             self.ip += 1;
             switch (instruction) {
                 .CONSTANT => {
-                    const val = self.read_val_from_chunk();
+                    const val = self.readValFromChunk();
                     self.push(val);
                 },
                 .NIL => self.push(Value.setNil()),
@@ -268,7 +272,7 @@ pub const VM = struct {
                     _ = try stdout.writer().write("\n");
                 },
                 .DEFINE_GLOBAL => {
-                    const name = self.read_val_from_chunk();
+                    const name = self.readValFromChunk();
                     switch (name) {
                         .string => |s| {
                             try self.globals.put(s.str, try self.peek(0));
@@ -290,7 +294,7 @@ pub const VM = struct {
                     self.stack[ptr + i] = try self.peek(0);
                 },
                 .GET_GLOBAL => {
-                    const name = self.read_val_from_chunk();
+                    const name = self.readValFromChunk();
                     switch (name) {
                         .string => |s| {
                             if (self.globals.get(s.str)) |val| {
@@ -311,7 +315,7 @@ pub const VM = struct {
                     }
                 },
                 .SET_GLOBAL => {
-                    const name = self.read_val_from_chunk();
+                    const name = self.readValFromChunk();
                     switch (name) {
                         .string => |s| {
                             self.globals.put(s.str, try self.peek(0)) catch {
@@ -330,18 +334,18 @@ pub const VM = struct {
                     }
                 },
                 .JUMP => {
-                    const offset = self.get_jump_offset();
+                    const offset = self.getJumpOffset();
                     self.ip += offset;
                 },
                 .JUMP_IF_FALSE => {
-                    const offset = self.get_jump_offset();
+                    const offset = self.getJumpOffset();
                     self.ip += 2;
                     if (isFalsy(try self.peek(0))) {
                         self.ip += offset;
                     }
                 },
                 .LOOP => {
-                    const offset = self.get_jump_offset();
+                    const offset = self.getJumpOffset();
                     self.ip -= offset;
                 },
                 .POP => {
@@ -352,13 +356,14 @@ pub const VM = struct {
                     self.call_stack_ptr += 1;
                     var call_stack = self.call_stack[self.call_stack_ptr];
                     const airity = @intFromEnum(self.instructions[self.ip]);
+
                     self.ip += 1;
                     call_stack.base_ptr = self.stack_ptr - airity;
-                    const procedure = try self.peek(airity);
                     call_stack.ret_ip = self.ip;
+
+                    const procedure = try self.peek(airity);
                     switch (procedure) {
                         .function => |f| {
-                            std.debug.print("airity {d}\n", .{f.airity});
                             if (airity != f.airity) {
                                 var buf: [256]u8 = undefined;
                                 _ = std.fmt.bufPrint(buf[0..], "Expected {d} args", .{airity}) catch {
@@ -369,7 +374,8 @@ pub const VM = struct {
                                 return error.ArgsMismatch;
                             }
                             self.ip = 0;
-                            self.instructions = self.chunks.code_list.items[f.code_ptr].items;
+                            self.instructions = self.getFnOpcode(f.fn_segment);
+                            std.debug.print("switched segment: {d} \n", .{f.fn_segment});
                         },
                         .closure => |_| unreachable,
                         else => return error.InvalidCall
@@ -378,13 +384,17 @@ pub const VM = struct {
                 .RETURN => {
                     // RET VAL
                     const call_stack = self.call_stack[self.call_stack_ptr];
-                    const ret_val = self.read_val_from_chunk();
+                    const ret_val = self.readValFromChunk();
                     for (0..(self.stack_ptr - call_stack.base_ptr)) |_| {
                         _ = self.pop();
                     }
                     self.call_stack_ptr -= 1;
                     self.push(ret_val);
                     self.ip = call_stack.ret_ip;
+
+                    std.debug.print("ret ip: {d} \n", .{self.ip});
+                    std.debug.print("", .{});
+                    return error.OperandMustBeNumber;
                 },
                 _ => break
             }
@@ -393,7 +403,7 @@ pub const VM = struct {
     }
 
     pub fn run(self: *VM) InterpretResult {
-        self.run_vm() catch |err| {
+        self.runVM() catch |err| {
             switch (err) {
                 error.OperandMustBeNumber => self.runtimeError("Operand must be a number."),
                 error.InvalidArithmeticOp => self.runtimeError("Can only do arithmetic operations on numbers."),

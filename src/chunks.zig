@@ -64,7 +64,7 @@ pub const Chunks = struct {
         };
     }
 
-    pub inline fn addFrame(self: *Chunks) void {
+    pub inline fn addCodeSegment(self: *Chunks) void {
         const allocator = self._arena.allocator();
         const code = ArrayList(OpCode).initCapacity(allocator, 4096) catch |e| allocatorError(e);
         self.code_list.append(code) catch |e| allocatorError(e);

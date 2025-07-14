@@ -10,7 +10,7 @@ const Opcode = chunks.Opcode;
 const Chunks = chunks.Chunks;
 
 // TODO:
-// - Iterator based for loops
+// - For loops
 // - Loop control flow: break, continue
 // - Stack overflow check
 // - Call frame overflow check
