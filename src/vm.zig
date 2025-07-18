@@ -13,6 +13,7 @@ const OpCode = c.OpCode;
 
 const STACK_SIZE = 256;
 const MAX_CALL_STACK = 256;
+const MAX_GLOBALS = 256;
 
 const InterpretResult = enum {
     INTERPRET_OK,
@@ -83,6 +84,7 @@ pub const VM = struct {
     call_stack: [MAX_CALL_STACK]CallFrame,
     call_stack_ptr: usize,
     globals: GlobalDeclMap,
+    globals2: [MAX_GLOBALS]Value,
     _allocator: *const Allocator,
 
     pub fn init(chunks: *Chunks, allocator: *const Allocator) VM {
@@ -96,6 +98,7 @@ pub const VM = struct {
             .call_stack = [_]CallFrame{CallFrame.init()} ** MAX_CALL_STACK,
             .call_stack_ptr = 0,
             .globals = globals,
+            .globals2 = [_]Value{Value.setVoid()} ** MAX_GLOBALS,
             ._allocator = allocator,
         };
     }
@@ -105,17 +108,17 @@ pub const VM = struct {
     }
 
     fn debug_vm(self: *VM) !void {
-//         for (self.stack) |v| {
-//             switch (v) {
-//                 .void => break,
-//                 else => {
-//                     std.debug.print("[ ", .{});
-//                     printValue(v) catch unreachable;
-//                     std.debug.print(" ]", .{});
-//                 }
-//             }
-// 
-//         }
+        for (self.stack) |v| {
+            switch (v) {
+                .void => break,
+                else => {
+                    std.debug.print("[ ", .{});
+                    printValue(v) catch unreachable;
+                    std.debug.print(" ]", .{});
+                }
+            }
+
+        }
         var segment: usize = 0;
         for (0..self.chunks.code_list.items.len) |i| {
             if (@intFromPtr(self.chunks.code_list.items[i].items.ptr) == 
@@ -272,14 +275,10 @@ pub const VM = struct {
                     _ = try stdout.writer().write("\n");
                 },
                 .DEFINE_GLOBAL => {
-                    const name = self.readValFromChunk();
-                    switch (name) {
-                        .string => |s| {
-                            try self.globals.put(s.str, try self.peek(0));
-                            _ = self.pop();
-                        },
-                        else => return error.VarNameMustBeString
-                    }
+                    const global_index: usize = @intFromEnum(self.instructions[self.ip]);
+                    self.ip += 1;
+                    const value = try self.peek(0);
+                    self.globals2[global_index] = value;
                 },
                 .GET_LOCAL => {
                     const i = @intFromEnum(self.instructions[self.ip]);
@@ -294,43 +293,25 @@ pub const VM = struct {
                     self.stack[ptr + i] = try self.peek(0);
                 },
                 .GET_GLOBAL => {
-                    const name = self.readValFromChunk();
-                    switch (name) {
-                        .string => |s| {
-                            if (self.globals.get(s.str)) |val| {
-                                try printValue(val);
-                                std.debug.print("\n", .{});
-                                self.push(val);
-                            } else {
-                                var buf: [256]u8 = undefined;
-                                _ = std.fmt.bufPrint(buf[0..], "Variable not defined: {s}", .{s.str}) catch {
-                                    std.debug.print("Could not format error variable", .{});
-                                    std.process.exit(64);
-                                };
-                                self.runtimeError(&buf);
-                                return error.VarUndefined;
-                            }
+                    const global_index: usize = @intFromEnum(self.instructions[self.ip]);
+                    self.ip += 1;
+                    const global_value = self.globals2[global_index];
+                    switch (global_value) {
+                        .void => {
+                            return error.VarUndefined;
                         },
-                        else => return error.VarNameMustBeString
+                        else => self.push(global_value)
                     }
                 },
                 .SET_GLOBAL => {
-                    const name = self.readValFromChunk();
-                    switch (name) {
-                        .string => |s| {
-                            self.globals.put(s.str, try self.peek(0)) catch {
-                                var buf: [256]u8 = undefined;
-                                _ = std.fmt.bufPrint(buf[0..], "Variable not defined: {s}", .{s.str}) catch {
-                                    std.debug.print("Could not format error variable", .{});
-                                    std.process.exit(64);
-                                };
-                                self.runtimeError(&buf);
-                                return error.VarUndefined;
-                            };
+                    const global_index: usize = @intFromEnum(self.instructions[self.ip]);
+                    self.ip += 1;
+                    const value = try self.peek(0);
+                    switch (self.globals2[global_index]) {
+                        .void => {
+                            return error.VarUndefined;
                         },
-                        else => {
-                            return error.VarNameMustBeString;
-                        }
+                        else => self.globals2[global_index] = value
                     }
                 },
                 .JUMP => {
@@ -392,8 +373,6 @@ pub const VM = struct {
                     self.push(ret_val);
                     self.ip = call_stack.ret_ip;
 
-                    std.debug.print("ret ip: {d} \n", .{self.ip});
-                    std.debug.print("", .{});
                     return error.OperandMustBeNumber;
                 },
                 _ => break
@@ -407,7 +386,7 @@ pub const VM = struct {
             switch (err) {
                 error.OperandMustBeNumber => self.runtimeError("Operand must be a number."),
                 error.InvalidArithmeticOp => self.runtimeError("Can only do arithmetic operations on numbers."),
-                error.VarNameMustBeString => self.runtimeError("Variable names must be string"),
+                // error.VarNameMustBeString => self.runtimeError("Variable names must be string"),
                 error.InvalidCall => self.runtimeError("Can only call functions"),
                 error.VarUndefined => {},
                 error.ArgsMismatch => {},

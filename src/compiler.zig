@@ -5,6 +5,8 @@ const parserule = @import("parserule.zig");
 const debug = @import("debug.zig");
 const values = @import("values.zig");
 
+const ArrayList = std.ArrayList;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const Allocator = std.mem.Allocator;
 const Scanner = lexer.Scanner;
 const TokenType = lexer.TokenType;
@@ -18,7 +20,8 @@ const LOGGING  = debug.ENABLE_LOGGING;
 const rules = parserule.rules;
 
 const MAX_LOCALS = 256;
-const MAX_FUNCTIONS = 4096;
+const MAX_GLOBALS = 256;
+const MAX_FUNCTIONS = 256;
 const UINT16_MAX = 1 << 16 - 1;
 
 pub const CompileFunction = struct {
@@ -36,6 +39,8 @@ pub const Local = struct {
 pub const Compiler = struct {
     locals: [MAX_LOCALS]Local,
     functions: [MAX_FUNCTIONS]CompileFunction,
+    globals: [MAX_GLOBALS]Token,
+    global_count: u8,
     local_count: u32,
     scope_depth: u32,
     current_frame: u16,
@@ -45,6 +50,8 @@ pub const Compiler = struct {
         return Compiler {
             .locals = undefined,
             .functions = undefined,
+            .globals = undefined,
+            .global_count = 0,
             // skip main function
             .function_count = 1,
             .local_count = 0,
@@ -281,6 +288,24 @@ pub const Parser = struct {
         return self.makeConstant(str);
     }
 
+    inline fn globalConstant(self: *Parser, name: *const Token) OpCode {
+        const global_index = self.compiler.global_count;
+        self.compiler.globals[global_index] = name.*;
+        self.compiler.global_count += 1;
+        return @enumFromInt(global_index);
+    }
+
+    inline fn getGlobal(self: *Parser, name: *const Token) OpCode {
+        for (0..(self.compiler.global_count)) |i| {
+            const global = self.compiler.globals[i];
+            if (compareIdentifier(&global, name)) {
+                return @enumFromInt(i);
+            }
+        }
+        self.errorAtPrevious("Global variable not defined");
+        return @enumFromInt(0);
+    }
+
     inline fn addLocal(self: *Parser, token: *const Token) void {
         if (self.compiler.local_count >= MAX_LOCALS) {
             self.errorAtCurrent("Local variables exceed the allotted size");
@@ -323,7 +348,8 @@ pub const Parser = struct {
         self.consume(.IDENTIFIER, msg);
         self.declareVariable();
         if (self.compiler.scope_depth > 0) return OpCode.RETURN;
-        return self.identifierConstant(self.previous());
+        return self.globalConstant(self.previous());
+        // return self.identifierConstant(self.previous());
     }
 
     inline fn defineVariable(self: *Parser, global: OpCode) void {
@@ -367,7 +393,7 @@ pub const Parser = struct {
         self.consume(.IDENTIFIER, msg);
         self.declareFunction();
         if (self.compiler.scope_depth > 0) return OpCode.RETURN;
-        return self.identifierConstant(self.previous());
+        return self.globalConstant(self.previous());
     }
 
     inline fn parseFunctionBody(self: *Parser) void {
@@ -554,7 +580,7 @@ pub const Parser = struct {
             getOp = .GET_LOCAL;
             setOp = .SET_LOCAL;
         } else {
-            arg = self.identifierConstant(name);
+            arg = self.getGlobal(name);
             getOp = .GET_GLOBAL;
             setOp = .SET_GLOBAL;
         }
@@ -566,7 +592,7 @@ pub const Parser = struct {
         }
     }
 
-    inline fn gatArgLen(self: *Parser) OpCode {
+    inline fn getArgLen(self: *Parser) OpCode {
         var args: u8 = 0;
         if (self.match(.RIGHT_PAREN)) {
             _ = self.advance();
@@ -589,7 +615,7 @@ pub const Parser = struct {
     }
 
     pub fn call(self: *Parser) void {
-        const arg_len = self.gatArgLen();
+        const arg_len = self.getArgLen();
         self.emitBytes(.CALL, arg_len);
     }
 

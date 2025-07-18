@@ -21,7 +21,8 @@ const Chunks = chunks.Chunks;
 // - Dynamic arrays
 // - Structs
 // - Copy on write strings
-// - JIT to x86
+// - Async with futures and io uring
+// - Turbo mode: JIT to x86
 // - GC with
 //   - concurrent relocation
 //   - concurrent marking with coloured pointers
