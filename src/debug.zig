@@ -17,9 +17,9 @@ fn simpleInstruction(name: []const u8, offset: usize) !usize {
 
 fn callInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
-    const function_idx = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
-    const args = @intFromEnum(c.code_list.items[segment].items[offset + 2]);
-    try stdout.print("{s:<16} {d}({d}) \n", .{name, function_idx, args});
+    // const function_idx = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
+    const args = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
+    try stdout.print("{s:<16} {d}({d}) \n", .{name, segment, args});
     return offset + 3;
 }
 

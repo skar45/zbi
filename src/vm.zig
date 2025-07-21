@@ -30,26 +30,6 @@ const VmError = error{
     ArgsMismatch,
 };
 
-const Context = struct {
-    pub fn hash(_: *const Context, k: []const u8) u32 {
-        var h: u32 = 2166136261;
-        for (k) |s| {
-            h ^= s;
-            h *%= 1677619;
-        }
-        return h;
-    }
-
-    pub fn eql(_: *const Context, key1: []const u8, key2: []const u8, _: usize) bool {
-        for (key1, 0..) |k, i| {
-            if (key2[i] != k) return false;
-        }
-        return true;
-    }
-};
-
-const GlobalDeclMap = std.ArrayHashMap([]const u8, Value, Context, true);
-
 pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
     // @compileLog("size of 'Value'", @sizeOf(Value));
     var chunks = Chunks.init();
@@ -83,12 +63,10 @@ pub const VM = struct {
     stack_ptr: usize,
     call_stack: [MAX_CALL_STACK]CallFrame,
     call_stack_ptr: usize,
-    globals: GlobalDeclMap,
-    globals2: [MAX_GLOBALS]Value,
+    globals: [MAX_GLOBALS]Value,
     _allocator: *const Allocator,
 
     pub fn init(chunks: *Chunks, allocator: *const Allocator) VM {
-        const globals = GlobalDeclMap.init(allocator.*);
         return VM {
             .chunks = chunks,
             .instructions = chunks.code_list.items[0].items,
@@ -97,14 +75,9 @@ pub const VM = struct {
             .stack_ptr = 0,
             .call_stack = [_]CallFrame{CallFrame.init()} ** MAX_CALL_STACK,
             .call_stack_ptr = 0,
-            .globals = globals,
-            .globals2 = [_]Value{Value.setVoid()} ** MAX_GLOBALS,
+            .globals = [_]Value{Value.setVoid()} ** MAX_GLOBALS,
             ._allocator = allocator,
         };
-    }
-
-    pub fn deinit(self: *VM) void {
-        self.globals.deinit();
     }
 
     fn debug_vm(self: *VM) !void {
@@ -278,7 +251,7 @@ pub const VM = struct {
                     const global_index: usize = @intFromEnum(self.instructions[self.ip]);
                     self.ip += 1;
                     const value = try self.peek(0);
-                    self.globals2[global_index] = value;
+                    self.globals[global_index] = value;
                 },
                 .GET_LOCAL => {
                     const i = @intFromEnum(self.instructions[self.ip]);
@@ -295,7 +268,7 @@ pub const VM = struct {
                 .GET_GLOBAL => {
                     const global_index: usize = @intFromEnum(self.instructions[self.ip]);
                     self.ip += 1;
-                    const global_value = self.globals2[global_index];
+                    const global_value = self.globals[global_index];
                     switch (global_value) {
                         .void => {
                             return error.VarUndefined;
@@ -307,13 +280,14 @@ pub const VM = struct {
                     const global_index: usize = @intFromEnum(self.instructions[self.ip]);
                     self.ip += 1;
                     const value = try self.peek(0);
-                    switch (self.globals2[global_index]) {
+                    switch (self.globals[global_index]) {
                         .void => {
                             return error.VarUndefined;
                         },
-                        else => self.globals2[global_index] = value
+                        else => self.globals[global_index] = value
                     }
                 },
+                // TARGET TARGET
                 .JUMP => {
                     const offset = self.getJumpOffset();
                     self.ip += offset;
@@ -332,15 +306,16 @@ pub const VM = struct {
                 .POP => {
                     _ = self.pop();
                 },
+                // ARGLEN FN
                 .CALL => {
-                    // ARGLEN FN
                     self.call_stack_ptr += 1;
-                    var call_stack = self.call_stack[self.call_stack_ptr];
+                    var call_frame = CallFrame.init();
                     const airity = @intFromEnum(self.instructions[self.ip]);
 
                     self.ip += 1;
-                    call_stack.base_ptr = self.stack_ptr - airity;
-                    call_stack.ret_ip = self.ip;
+                    call_frame.base_ptr = self.stack_ptr - airity;
+                    call_frame.ret_ip = self.ip;
+                    self.call_stack[self.call_stack_ptr] = call_frame;
 
                     const procedure = try self.peek(airity);
                     switch (procedure) {
@@ -356,24 +331,25 @@ pub const VM = struct {
                             }
                             self.ip = 0;
                             self.instructions = self.getFnOpcode(f.fn_segment);
+                            std.debug.print("airity {d}  base ptr {d}\n", .{airity, call_frame.base_ptr});
                             std.debug.print("switched segment: {d} \n", .{f.fn_segment});
                         },
                         .closure => |_| unreachable,
                         else => return error.InvalidCall
                     }
                 },
+                // RET VAL
                 .RETURN => {
-                    // RET VAL
                     const call_stack = self.call_stack[self.call_stack_ptr];
-                    const ret_val = self.readValFromChunk();
                     for (0..(self.stack_ptr - call_stack.base_ptr)) |_| {
                         _ = self.pop();
                     }
+                    _ = self.pop();
                     self.call_stack_ptr -= 1;
-                    self.push(ret_val);
                     self.ip = call_stack.ret_ip;
-
-                    return error.OperandMustBeNumber;
+                    self.instructions = self.getFnOpcode(self.call_stack_ptr);
+                    std.debug.print("call stack ptr: {d} \n", .{self.call_stack_ptr});
+                    std.debug.print("current ip: {d} \n", .{self.ip});
                 },
                 _ => break
             }

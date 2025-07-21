@@ -273,6 +273,7 @@ pub const Parser = struct {
         for (0..local_count) |i| {
             const index = local_count - 1 - i;
             const local = self.compiler.locals[index];
+            std.debug.print("local: {s} depth: {d} \n", .{local.name.start.items, local.depth});
             if (compareIdentifier(name, &local.name)) {
                 if (local.depth == -1) {
                     self.errorAtCurrent("Can't read variables in its own initializer");
@@ -281,11 +282,6 @@ pub const Parser = struct {
             }
         }
         return null;
-    }
-
-    inline fn identifierConstant(self: *Parser, name: *const Token) OpCode {
-        const str = Value.setString(name.start.items, self._allocator);
-        return self.makeConstant(str);
     }
 
     inline fn globalConstant(self: *Parser, name: *const Token) OpCode {
@@ -349,7 +345,6 @@ pub const Parser = struct {
         self.declareVariable();
         if (self.compiler.scope_depth > 0) return OpCode.RETURN;
         return self.globalConstant(self.previous());
-        // return self.identifierConstant(self.previous());
     }
 
     inline fn defineVariable(self: *Parser, global: OpCode) void {
@@ -431,16 +426,16 @@ pub const Parser = struct {
         self.beginScope();
         self.parseFunctionParams(compiler_func);
         self.parseFunctionBody();
-        self.endScope();
-
         if (!compiler_func.has_ret) {
             self.emitReturn();
             self.emitByte(.NIL);
         }
-        self.emitConstant(Value.setFn(self.compiler.current_frame, compiler_func.airity));
-        self.emitBytes(.DEFINE_GLOBAL, global);
+        self.endScope();
 
+        const func_frame = self.compiler.current_frame;
         self.compiler.current_frame = prev_frame;
+        self.emitConstant(Value.setFn(func_frame, compiler_func.airity));
+        self.emitBytes(.DEFINE_GLOBAL, global);
     }
 
     inline fn expression(self: *Parser) void {
@@ -690,9 +685,9 @@ pub const Parser = struct {
 
     pub fn literal(self: *Parser) void {
         switch (self.previous().ttype) {
-            .FALSE => self.emitByte(OpCode.FALSE),
-            .NIL => self.emitByte(OpCode.NIL),
-            .TRUE => self.emitByte(OpCode.TRUE),
+            .FALSE => self.emitByte(.FALSE),
+            .NIL => self.emitByte(.NIL),
+            .TRUE => self.emitByte(.TRUE),
             else => return
         }
     }
