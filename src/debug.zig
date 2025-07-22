@@ -1,4 +1,5 @@
 const std = @import("std");
+const config = @import("config");
 const chunks = @import("chunks.zig");
 const values = @import("values.zig");
 const errors = @import("errors.zig");
@@ -7,7 +8,7 @@ const OpCode = chunks.OpCode;
 const Chunks = chunks.Chunks;
 
 
-pub const ENABLE_LOGGING = true;
+pub const ENABLE_LOGGING = config.DEBUG;
 
 fn simpleInstruction(name: []const u8, offset: usize) !usize {
     const stdout = std.io.getStdOut().writer();
@@ -19,8 +20,9 @@ fn callInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) 
     const stdout = std.io.getStdOut().writer();
     // const function_idx = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
     const args = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
+    // const function = @intFromEnum(c.code_list.items[segment].items[offset + 2]);
     try stdout.print("{s:<16} {d}({d}) \n", .{name, segment, args});
-    return offset + 3;
+    return offset + 2;
 }
 
 fn jumpInstruction(name: []const u8, sign: isize, c: *Chunks, segment: usize, offset: usize) !usize {

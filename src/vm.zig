@@ -322,17 +322,12 @@ pub const VM = struct {
                         .function => |f| {
                             if (airity != f.airity) {
                                 var buf: [256]u8 = undefined;
-                                _ = std.fmt.bufPrint(buf[0..], "Expected {d} args", .{airity}) catch {
-                                    std.debug.print("Could not format error variable", .{});
-                                    std.process.exit(64);
-                                };
+                                _ = try std.fmt.bufPrint(buf[0..], "Expected {d} args", .{airity});
                                 self.runtimeError(&buf);
                                 return error.ArgsMismatch;
                             }
                             self.ip = 0;
                             self.instructions = self.getFnOpcode(f.fn_segment);
-                            std.debug.print("airity {d}  base ptr {d}\n", .{airity, call_frame.base_ptr});
-                            std.debug.print("switched segment: {d} \n", .{f.fn_segment});
                         },
                         .closure => |_| unreachable,
                         else => return error.InvalidCall
@@ -341,15 +336,13 @@ pub const VM = struct {
                 // RET VAL
                 .RETURN => {
                     const call_stack = self.call_stack[self.call_stack_ptr];
-                    for (0..(self.stack_ptr - call_stack.base_ptr)) |_| {
-                        _ = self.pop();
-                    }
-                    _ = self.pop();
+//                     for (0..(self.stack_ptr - call_stack.base_ptr)) |_| {
+//                         _ = self.pop();
+//                     }
+//                     _ = self.pop();
                     self.call_stack_ptr -= 1;
                     self.ip = call_stack.ret_ip;
                     self.instructions = self.getFnOpcode(self.call_stack_ptr);
-                    std.debug.print("call stack ptr: {d} \n", .{self.call_stack_ptr});
-                    std.debug.print("current ip: {d} \n", .{self.ip});
                 },
                 _ => break
             }

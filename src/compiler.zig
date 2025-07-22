@@ -219,9 +219,8 @@ pub const Parser = struct {
     inline fn endScope(self: *Parser) void {
         self.compiler.scope_depth -= 1;
         if (self.compiler.local_count == 0) return;
-        const local_depth = self.compiler.locals[self.compiler.local_count - 1].depth;
         const scope_depth = self.compiler.scope_depth;
-        while (self.compiler.local_count > 0 and local_depth > scope_depth) {
+        while (self.compiler.local_count > 0 and self.compiler.locals[self.compiler.local_count - 1].depth > scope_depth) {
             self.emitByte(.POP);
             self.compiler.local_count -= 1;
         }
@@ -273,7 +272,6 @@ pub const Parser = struct {
         for (0..local_count) |i| {
             const index = local_count - 1 - i;
             const local = self.compiler.locals[index];
-            std.debug.print("local: {s} depth: {d} \n", .{local.name.start.items, local.depth});
             if (compareIdentifier(name, &local.name)) {
                 if (local.depth == -1) {
                     self.errorAtCurrent("Can't read variables in its own initializer");
