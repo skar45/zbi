@@ -290,7 +290,7 @@ pub const VM = struct {
                 // TARGET TARGET
                 .JUMP => {
                     const offset = self.getJumpOffset();
-                    self.ip += offset;
+                    self.ip += (offset + 2);
                 },
                 .JUMP_IF_FALSE => {
                     const offset = self.getJumpOffset();
