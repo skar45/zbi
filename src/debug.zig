@@ -66,6 +66,7 @@ pub fn disassembleInstruction(c: *Chunks, segment: usize, offset: usize) !usize 
     const instruction: OpCode = c.code_list.items[segment].items[offset];
     return switch (instruction) {
         .RETURN => try simpleInstruction("OP_RETURN", offset),
+        .RETURN_NIL => try simpleInstruction("OP_RETURN_NIL", offset),
         .PRINT => try simpleInstruction("OP_PRINT", offset),
         .CONSTANT => try constantInstruction("OP_CONSTANT", c, segment, offset),
         .NIL => try simpleInstruction("OP_NIL", offset),

@@ -31,6 +31,7 @@ pub const OpCode = enum(usize){
     SET_GLOBAL,
     CALL,
     RETURN,
+    RETURN_NIL,
     _
 };
 

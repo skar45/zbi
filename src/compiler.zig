@@ -204,7 +204,6 @@ pub const Parser = struct {
     }
 
     pub inline fn endCompiler(self: *Parser) void {
-        // self.emitReturn();
         if (comptime LOGGING) {
             debug.disassembleChunk(self.compilingChunk, "code") catch |e| {
                 std.debug.print("Could not print debug {}", .{e});
@@ -216,13 +215,26 @@ pub const Parser = struct {
         self.compiler.scope_depth += 1;
     }
 
+//     inline fn endFnScope(self: *Parser) void {
+//         if (self.compiler.local_count == 0) return;
+//         const scope_depth = self.compiler.scope_depth;
+//         const depth = self.compiler.locals[self.compiler.local_count - 1].depth;
+//         while (depth > scope_depth) {
+//             self.emitByte(.POP);
+//         }
+// 
+//     }
+
     inline fn endScope(self: *Parser) void {
         self.compiler.scope_depth -= 1;
         if (self.compiler.local_count == 0) return;
         const scope_depth = self.compiler.scope_depth;
-        while (self.compiler.local_count > 0 and self.compiler.locals[self.compiler.local_count - 1].depth > scope_depth) {
+        while (self.compiler.locals[self.compiler.local_count - 1].depth > scope_depth) {
+            const local = self.compiler.locals[self.compiler.local_count - 1];
+            std.debug.print("local: {s} \n", .{local.name.start.items});
             self.emitByte(.POP);
             self.compiler.local_count -= 1;
+            if (self.compiler.local_count == 0) break;
         }
     }
 
@@ -425,8 +437,7 @@ pub const Parser = struct {
         self.parseFunctionParams(compiler_func);
         self.parseFunctionBody();
         if (!compiler_func.has_ret) {
-            self.emitReturn();
-            self.emitByte(.NIL);
+            self.emitByte(.RETURN_NIL);
         }
         self.endScope();
 
@@ -492,15 +503,18 @@ pub const Parser = struct {
         const curr_fn = self.getCurrentCompilingFunction();
         curr_fn.has_ret = true;
 
-        self.emitReturn();
         switch (self.current().ttype) {
             .SEMICOLON => {
-                self.emitByte(.NIL);
+                self.emitByte(.RETURN_NIL);
                 self.advance();
                 return;
             },
-            else => self.expression()
+            else => {
+                self.expression();
+                self.emitReturn();
+            }
         }
+        // self.endFnScope();
         self.consume(.SEMICOLON, "Expected ';' after return");
     }
 

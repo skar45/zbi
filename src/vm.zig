@@ -333,13 +333,26 @@ pub const VM = struct {
                         else => return error.InvalidCall
                     }
                 },
-                // RET VAL
+                // VAL RET
                 .RETURN => {
                     const call_stack = self.call_stack[self.call_stack_ptr];
-//                     for (0..(self.stack_ptr - call_stack.base_ptr)) |_| {
-//                         _ = self.pop();
-//                     }
-//                     _ = self.pop();
+                    const ret_val = self.pop();
+                    for (0..(self.stack_ptr - call_stack.base_ptr)) |_| {
+                        _ = self.pop();
+                    }
+                    _ = self.pop();
+                    self.push(ret_val);
+                    self.call_stack_ptr -= 1;
+                    self.ip = call_stack.ret_ip;
+                    self.instructions = self.getFnOpcode(self.call_stack_ptr);
+                },
+                .RETURN_NIL => {
+                    const call_stack = self.call_stack[self.call_stack_ptr];
+                    for (0..(self.stack_ptr - call_stack.base_ptr)) |_| {
+                        _ = self.pop();
+                    }
+                    _ = self.pop();
+                    self.push(Value.setNil());
                     self.call_stack_ptr -= 1;
                     self.ip = call_stack.ret_ip;
                     self.instructions = self.getFnOpcode(self.call_stack_ptr);
