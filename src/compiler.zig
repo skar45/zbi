@@ -16,6 +16,8 @@ const OpCode = c.OpCode;
 const Precedence = parserule.Precedence;
 const ParseRule = parserule.ParseRule;
 const Value = values.Value;
+const Table = values.Table;
+const DebugCode = debug.DebugCode;
 const LOGGING  = debug.ENABLE_LOGGING;
 const rules = parserule.rules;
 
@@ -148,7 +150,7 @@ pub const Parser = struct {
         self.errorAtCurrent(self.current().start.items);
     }
 
-    pub fn consume(self: *Parser, ttype: TokenType, message: []const u8) void {
+    pub fn consume(self: *Parser, ttype: TokenType, comptime message: []const u8) void {
         if (self.current().ttype == ttype) {
             self.advance();
         } else {
@@ -186,11 +188,20 @@ pub const Parser = struct {
 
     inline fn makeConstant(self: *Parser, value: Value) OpCode {
         const constant = self.compilingChunk.addConstant(value);
+        std.debug.print("constant idx: {d} \n", .{@intFromEnum(constant)});
         return constant;
     }
 
     inline fn emitConstant(self: *Parser, value: Value) void {
         self.emitBytes(OpCode.CONSTANT, self.makeConstant(value));
+    }
+
+    inline fn emitTable(self: *Parser, table_val: Table, assign: u8) void {
+        self.advance();
+        self.emitBytes(.DEFINE_TABLE, @enumFromInt(assign));
+        const value = Value.initTable(table_val);
+        self.emitByte(self.makeConstant(value));
+        return;
     }
 
     inline fn patchJump(self: *Parser, offset: usize) void {
@@ -205,8 +216,9 @@ pub const Parser = struct {
 
     pub inline fn endCompiler(self: *Parser) void {
         if (comptime LOGGING) {
-            debug.disassembleChunk(self.compilingChunk, "code") catch |e| {
-                std.debug.print("Could not print debug {}", .{e});
+            var debug_trace = DebugCode.init(0, 0, self.compilingChunk);
+            debug_trace.disassembleChunk("code") catch {
+                self.errorAtCurrent("Coud not run debug trace");
             };
         }
     }
@@ -230,8 +242,6 @@ pub const Parser = struct {
         if (self.compiler.local_count == 0) return;
         const scope_depth = self.compiler.scope_depth;
         while (self.compiler.locals[self.compiler.local_count - 1].depth > scope_depth) {
-            const local = self.compiler.locals[self.compiler.local_count - 1];
-            std.debug.print("local: {s} \n", .{local.name.start.items});
             self.emitByte(.POP);
             self.compiler.local_count -= 1;
             if (self.compiler.local_count == 0) break;
@@ -350,7 +360,7 @@ pub const Parser = struct {
         self.compiler.locals[self.compiler.local_count - 1].depth = self.compiler.scope_depth;
     }
 
-    inline fn parseVariable(self: *Parser, msg: []const u8) OpCode {
+    inline fn parseVariable(self: *Parser, comptime msg: []const u8) OpCode {
         self.consume(.IDENTIFIER, msg);
         self.declareVariable();
         if (self.compiler.scope_depth > 0) return OpCode.RETURN;
@@ -394,7 +404,7 @@ pub const Parser = struct {
         self.addFunction(name);
     }
 
-    inline fn parseFunction(self: *Parser,  msg: []const u8) OpCode {
+    inline fn parseFunction(self: *Parser,  comptime msg: []const u8) OpCode {
         self.consume(.IDENTIFIER, msg);
         self.declareFunction();
         if (self.compiler.scope_depth > 0) return OpCode.RETURN;
@@ -656,6 +666,34 @@ pub const Parser = struct {
         const str = self.previous().start.items;
         const value = Value.setString(str[1..(str.len - 1)], self._allocator);
         self.emitConstant(value);
+    }
+
+    pub fn table_get(self: *Parser) void {
+        self.emitByte(.TABLE_GET);
+        self.expression();
+    }
+
+    pub fn table(self: *Parser) void {
+        const table_val =  Table.init(self._allocator);
+        var assign_count: u8 = 0;
+        if (self.match(.RIGHT_BRACE)) {
+            self.emitTable(table_val, assign_count);
+        }
+        while (true) {
+            self.expression();
+            self.consume(.COLON, "Expected ':'");
+            self.expression();
+            assign_count += 1;
+            if (self.match(.RIGHT_BRACE)) {
+                self.emitTable(table_val, assign_count);
+                break;
+            }
+            if (assign_count == 255) {
+                self.errorAtCurrent("Can only assign 255 values to table");
+                break;
+            }
+            self.consume(.COMMA, "Expected ','");
+        }
     }
 
     pub fn unary(self: *Parser) void {

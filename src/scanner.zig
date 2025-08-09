@@ -6,8 +6,9 @@ pub const TokenType = enum(usize) {
   // Single-character tokens.
   LEFT_PAREN = 0, RIGHT_PAREN,
   LEFT_BRACE, RIGHT_BRACE,
+  LEFT_BRACKET, RIGHT_BRACKET,
   COMMA, DOT, MINUS, PLUS,
-  SEMICOLON, SLASH, STAR,
+  COLON, SEMICOLON, SLASH, STAR,
   // One or two character tokens.
   BANG, BANG_EQUAL,
   EQUAL, EQUAL_EQUAL,
@@ -231,6 +232,7 @@ pub const Scanner = struct {
             '+' => self.makeToken(TokenType.PLUS),
             '*' => self.makeToken(TokenType.STAR),
             '/' => self.makeToken(TokenType.SLASH),
+            ':' => self.makeToken(TokenType.COLON),
             '!' => self.makeToken(if (self.match('=')) TokenType.BANG_EQUAL else TokenType.BANG),
             '=' => self.makeToken(if (self.match('=')) TokenType.EQUAL_EQUAL else TokenType.EQUAL),
             '<' => self.makeToken(if (self.match('=')) TokenType.LESS_EQUAL else TokenType.LESS),

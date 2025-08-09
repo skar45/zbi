@@ -1,5 +1,5 @@
 {
-  description = "A Zig development environment";
+  description = "poo";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -15,7 +15,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
             zig
-            # zls # Zig Language Server for editor integration
+            # zls
           ];
           shellHook = ''
             echo "Zig development environment loaded!"

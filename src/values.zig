@@ -45,9 +45,9 @@ pub const Value = union(enum) {
         };
     }
 
-    pub fn initTable(allocator: *const Allocator) Value {
+    pub fn initTable(table: Table) Value {
         return Value {
-            .table = Table.init(allocator)
+            .table = table
         };
     }
 
@@ -82,10 +82,7 @@ pub const StringObj = struct {
     }
 
     pub fn concat(str1: []const u8, str2: []const u8, allocator: *const Allocator) StringObj {
-        const result = allocator.alloc(u8, str1.len + str2.len) catch {
-            std.debug.print("Allocator OOM", .{});
-            std.process.exit(64);
-        };
+        const result = allocator.alloc(u8, str1.len + str2.len) catch unreachable;
         @memcpy(result[0..str1.len],  str1);
         @memcpy(result[str1.len..],  str2);
 
@@ -133,8 +130,10 @@ pub const Table = struct {
 
     pub fn insert(self: *Table, k: Value, v: Value) void {
         switch (k) {
-            .table | .void => unreachable,
-            else => self.map.put(k, v) catch unreachable
+            .table, .void => unreachable,
+            else => self.map.put(k, v) catch {
+                std.debug.print("errror \n", .{});
+            }
         }
     }
 
@@ -185,12 +184,7 @@ pub const TableHash = struct {
             },
             .string => |s1| {
                 return switch (key2) {
-                    .string => |s2| {
-                        for (s1.str, 0..) |s, i| {
-                            if (s != s2.str[i]) return false;
-                        }
-                        return true;
-                    },
+                    .string => |s2| std.mem.eql(u8, s1.str, s2.str),
                     else => false
                 };
             },
@@ -302,11 +296,18 @@ pub fn printValue(value: Value) !void {
                         try stdout.print("[{s}]: ", .{s.str});
                         const val = t.get(k);
                         try printValue(val);
-                        try stdout.print("\n", .{});
+                        try stdout.print(", ", .{});
+                    },
+                    .number => |n| {
+                        try stdout.print("[{d}]: ", .{n});
+                        const val = t.get(k);
+                        try printValue(val);
+                        try stdout.print(", ", .{});
                     },
                     else => unreachable
                 }
             }
+            try stdout.print("]", .{});
         },
         .function => |f| try stdout.print("fn {d}({d})", .{f.fn_segment, f.airity}),
         .nil => try stdout.print("nil ", .{}),

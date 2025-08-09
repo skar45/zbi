@@ -1,111 +1,153 @@
 const std = @import("std");
 const config = @import("config");
-const chunks = @import("chunks.zig");
+const c = @import("chunks.zig");
 const values = @import("values.zig");
 const errors = @import("errors.zig");
 
-const OpCode = chunks.OpCode;
-const Chunks = chunks.Chunks;
+const OpCode = c.OpCode;
+const Chunks = c.Chunks;
 
 
 pub const ENABLE_LOGGING = config.DEBUG;
+pub const Writer = std.io.Writer(std.fs.File, std.posix.WriteError, std.fs.File.write);
 
-fn simpleInstruction(name: []const u8, offset: usize) !usize {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("{s:<16} \n", .{name});
-    return offset + 1;
-}
+pub const DebugCode = struct {
+    segment: usize,
+    offset: usize,
+    chunks: *Chunks,
+    stdout: Writer,
 
-fn callInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) !usize {
-    const stdout = std.io.getStdOut().writer();
-    // const function_idx = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
-    const args = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
-    // const function = @intFromEnum(c.code_list.items[segment].items[offset + 2]);
-    try stdout.print("{s:<16} {d}({d}) \n", .{name, segment, args});
-    return offset + 2;
-}
-
-fn jumpInstruction(name: []const u8, sign: isize, c: *Chunks, segment: usize, offset: usize) !usize {
-    const stdout = std.io.getStdOut().writer();
-    var jump = @intFromEnum(c.code_list.items[segment].items[offset + 1]) << 8;
-    jump |= @intFromEnum(c.code_list.items[segment].items[offset + 2]);
-    const index = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
-    const ioffset: isize = @intCast(offset);
-    const ijump: isize = @intCast(jump);
-    const target = ioffset + 3 + sign * ijump;
-    try stdout.print("{s:<16} {d:0>3} -> {d}\n", .{name, index, target});
-    return offset + 3;
-}
-
-fn byteInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) !usize {
-    const stdout = std.io.getStdOut().writer();
-    const index = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
-    try stdout.print("{s:<16} {d:0>3}\n", .{name, index});
-    return offset + 2;
-}
-
-fn constantInstruction(name: []const u8, c: *Chunks, segment: usize, offset: usize) !usize {
-    const stdout = std.io.getStdOut().writer();
-    const index = @intFromEnum(c.code_list.items[segment].items[offset + 1]);
-    try stdout.print("{s:<16} {d:5} ", .{name, index});
-    try values.printValue(c.values.items[index]);
-    try stdout.print("\n", .{});
-    return offset + 2;
-
-}
-
-pub fn disassembleInstruction(c: *Chunks, segment: usize, offset: usize) !usize {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("{d:0>4} ", .{offset});
-    if (offset > 0 and c.lines.items[offset] == c.lines.items[offset - 1]) {
-        try stdout.print("   | ", .{});
-    } else {
-        try stdout.print("{d:4} ", .{c.lines.items[offset]});
+    pub fn init(segment: usize, offset: usize, chunks: *Chunks) DebugCode {
+        const writer = std.io.getStdOut().writer();
+        return DebugCode {
+            .segment = segment,
+            .offset = offset,
+            .chunks = chunks,
+            .stdout = writer
+        };
     }
 
-    const instruction: OpCode = c.code_list.items[segment].items[offset];
-    return switch (instruction) {
-        .RETURN => try simpleInstruction("OP_RETURN", offset),
-        .RETURN_NIL => try simpleInstruction("OP_RETURN_NIL", offset),
-        .PRINT => try simpleInstruction("OP_PRINT", offset),
-        .CONSTANT => try constantInstruction("OP_CONSTANT", c, segment, offset),
-        .NIL => try simpleInstruction("OP_NIL", offset),
-        .TRUE => try simpleInstruction("OP_TRUE", offset),
-        .FALSE => try simpleInstruction("OP_FALSE", offset),
-        .NOT => try simpleInstruction("OP_NOT", offset),
-        .EQUAL => try simpleInstruction("OP_EQUAL", offset),
-        .GREATER => try simpleInstruction("OP_GREATER", offset),
-        .LESS => try simpleInstruction("OP_LESS", offset),
-        .ADD => try simpleInstruction("OP_ADD", offset),
-        .SUBTRACT => try simpleInstruction("OP_SUBTRACT", offset),
-        .MULTIPLY => try simpleInstruction("OP_MULTIPLY", offset),
-        .DIVIDE => try simpleInstruction("OP_DIVIDE", offset),
-        .NEGATE => try simpleInstruction("OP_NEGATE", offset),
-        .POP => try simpleInstruction("OP_POP", offset),
-        .GET_LOCAL => try byteInstruction("OP_GET_LOCAL", c, segment, offset),
-        .SET_LOCAL => try byteInstruction("OP_SET_LOCAL", c, segment, offset),
-        .DEFINE_GLOBAL => try constantInstruction("OP_DEFINE_GLOBAL", c, segment, offset),
-        .GET_GLOBAL => try constantInstruction("OP_GET_GLOBAL", c, segment, offset),
-        .SET_GLOBAL => try constantInstruction("OP_SET_GLOBAL", c, segment, offset),
-        .JUMP => try jumpInstruction("OP_JUMP", 1, c, segment, offset),
-        .JUMP_IF_FALSE => try jumpInstruction("OP_JUMP_IF_ELSE", 1, c, segment, offset),
-        .LOOP => try jumpInstruction("OP_LOOP", -1, c, segment, offset),
-        .CALL => try callInstruction("OP_CALL", c, segment, offset),
-        _ => return error.UnknownOpcode
-    };
-}
+    inline fn print(self: *DebugCode, comptime format: []const u8, args: anytype) void {
+        self.stdout.print(format, args) catch {
+            std.debug.print("fuckoff ", .{});
+        };
+    }
 
-pub fn disassembleChunk(c: *Chunks, name: []const u8) !void {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("== {s} ==\n", .{name});
+    inline fn getLine(self: *DebugCode, offset: usize) usize {
+        return self.chunks.lines.items[offset];
+    }
 
-    var offset: usize = 0;
-    for (0..c.code_list.items.len) |idx| {
-        std.debug.print("\n", .{});
-        std.debug.print("=== {d} ===\n", .{idx});
-        offset = 0;
-        while (offset < c.code_list.items[idx].items.len){
-            offset = try disassembleInstruction(c, idx, offset);
+    inline fn getOpCode(self: *DebugCode, offset: usize) OpCode {
+        return self.chunks.code_list.items[self.segment].items[offset];
+    }
+
+    inline fn getOpCodeInt(self: *DebugCode, offset: usize) usize {
+        return @intFromEnum(self.getOpCode(offset));
+    }
+
+    fn simpleInstruction(self: *DebugCode, comptime name: []const u8) usize {
+        self.print("{s:<16} \n", .{name});
+        return self.offset + 1;
+    }
+
+    fn defineTableInstruction(self: *DebugCode, comptime name: []const u8) usize {
+        const args = self.getOpCodeInt(self.offset + 1);
+        const idx  = self.getOpCodeInt(self.offset + 2);
+        self.print("{s:<16} {d:5} ", .{name, idx});
+        const value = self.chunks.values.items[idx];
+        values.printValue(value) catch unreachable;
+        self.print("({d})\n", .{args});
+        return self.offset + 3;
+    }
+
+    fn callInstruction(self: *DebugCode, comptime name: []const u8) usize {
+        const args = self.getOpCodeInt(self.offset + 1);
+        self.print("{s:<16} {d:5} ({d}) \n", .{name, self.segment, args});
+        return self.offset + 2;
+    }
+
+    fn jumpInstruction(self: *DebugCode, comptime name: []const u8, sign: isize) usize {
+        var jump = self.getOpCodeInt(self.offset + 1) << 8;
+        jump |= self.getOpCodeInt(self.offset + 2);
+        const index = self.getOpCodeInt(self.offset + 1);
+        const ioffset: isize = @intCast(self.offset);
+        const ijump: isize = @intCast(jump);
+        const target = ioffset + 3 + sign * ijump;
+        self.print("{s:<16} {d:0>3} -> {d}\n", .{name, index, target});
+        return self.offset + 3;
+    }
+
+    fn defineGlobalInstruction(self: *DebugCode, comptime name: []const u8) usize {
+        const index = self.getOpCodeInt(self.offset + 1);
+        self.print("{s:<16} {d:5}\n", .{name, index});
+        return self.offset + 2;
+    }
+
+    fn byteInstruction(self: *DebugCode, comptime name: []const u8) usize {
+        const index = self.getOpCodeInt(self.offset + 1);
+        self.print("{s:<16} {d:0>3}\n", .{name, index});
+        return self.offset + 2;
+    }
+
+    fn constantInstruction(self: *DebugCode, comptime name: []const u8) usize {
+        const index = self.getOpCodeInt(self.offset + 1);
+        self.print("{s:<16} {d:5} ", .{name, index});
+        values.printValue(self.chunks.values.items[index]) catch unreachable;
+        self.print("\n", .{});
+        return self.offset + 2;
+    }
+
+    pub fn disassembleInstruction(self: *DebugCode) !usize {
+        self.print("{d:0>4} ", .{self.offset});
+        if (self.offset > 0 and self.getLine(self.offset) == self.getLine(self.offset - 1)) {
+            self.print("   | ", .{});
+        } else {
+            self.print("{d:4} ", .{self.getLine(self.offset)});
+        }
+
+        const instruction: OpCode = self.getOpCode(self.offset);
+        return switch (instruction) {
+            .RETURN =>  self.simpleInstruction("OP_RETURN"),
+            .RETURN_NIL => self.simpleInstruction("OP_RETURN_NIL"),
+            .PRINT => self.simpleInstruction("OP_PRINT"),
+            .CONSTANT =>self.constantInstruction("OP_CONSTANT"),
+            .NIL => self.simpleInstruction("OP_NIL"),
+            .TRUE => self.simpleInstruction("OP_TRUE"),
+            .FALSE => self.simpleInstruction("OP_FALSE"),
+            .NOT => self.simpleInstruction("OP_NOT"),
+            .EQUAL => self.simpleInstruction("OP_EQUAL"),
+            .GREATER => self.simpleInstruction("OP_GREATER"),
+            .LESS => self.simpleInstruction("OP_LESS"),
+            .ADD => self.simpleInstruction("OP_ADD"),
+            .SUBTRACT => self.simpleInstruction("OP_SUBTRACT"),
+            .MULTIPLY => self.simpleInstruction("OP_MULTIPLY"),
+            .DIVIDE => self.simpleInstruction("OP_DIVIDE"),
+            .NEGATE => self.simpleInstruction("OP_NEGATE"),
+            .POP => self.simpleInstruction("OP_POP"),
+            .GET_LOCAL => self.byteInstruction("OP_GET_LOCAL"),
+            .SET_LOCAL => self.byteInstruction("OP_SET_LOCAL"),
+            .DEFINE_GLOBAL => self.defineGlobalInstruction("OP_DEFINE_GLOBAL"),
+            .GET_GLOBAL => self.constantInstruction("OP_GET_GLOBAL"),
+            .SET_GLOBAL => self.constantInstruction("OP_SET_GLOBAL"),
+            .DEFINE_TABLE => self.defineTableInstruction("OP_DEFINE_TABLE"),
+            .JUMP => self.jumpInstruction("OP_JUMP", 1),
+            .JUMP_IF_FALSE => self.jumpInstruction("OP_JUMP_IF_ELSE", 1),
+            .LOOP => self.jumpInstruction("OP_LOOP", -1),
+            .CALL => self.callInstruction("OP_CALL"),
+            _ => error.UnknownOpcode
+        };
+    }
+
+    pub fn disassembleChunk(self: *DebugCode, name: []const u8) !void {
+        self.print("== {s} ==\n", .{name});
+        self.offset = 0;
+        for (0..self.chunks.code_list.items.len) |idx| {
+            std.debug.print("\n", .{});
+            std.debug.print("=== {d} ===\n", .{idx});
+            self.offset = 0;
+            while (self.offset < self.chunks.code_list.items[idx].items.len){
+                self.offset = try self.disassembleInstruction();
+            }
         }
     }
-}
+};

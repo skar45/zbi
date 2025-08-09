@@ -10,6 +10,7 @@ const printValue = values.printValue;
 const Value = values.Value;
 const Chunks = c.Chunks;
 const OpCode = c.OpCode;
+const DebugCode = debug.DebugCode;
 
 const STACK_SIZE = 256;
 const MAX_CALL_STACK = 256;
@@ -28,6 +29,7 @@ const VmError = error{
     VarUndefined,
     InvalidCall,
     ArgsMismatch,
+    InvalidTableOp
 };
 
 pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
@@ -101,9 +103,19 @@ pub const VM = struct {
                 break;
             }
         }
+
         std.debug.print("\n", .{});
+//         std.debug.print("constants: ", .{});
+//         for (self.chunks.values.items) |v| {
+//             std.debug.print("[ ", .{});
+//             printValue(v) catch unreachable;
+//             std.debug.print(" ]", .{});
+//         }
+// 
+//         std.debug.print("\n", .{});
         const off: usize = self.ip;
-        _ = try debug.disassembleInstruction(self.chunks, segment, off);
+        var debug_trace = DebugCode.init(segment, off, self.chunks);
+        _ = try debug_trace.disassembleInstruction();
     }
 
     fn runtimeError(self: *VM, format: []const u8) void {
@@ -351,11 +363,31 @@ pub const VM = struct {
                     for (0..(self.stack_ptr - call_stack.base_ptr)) |_| {
                         _ = self.pop();
                     }
+                    // Remove callee from the stack
                     _ = self.pop();
                     self.push(Value.setNil());
                     self.call_stack_ptr -= 1;
                     self.ip = call_stack.ret_ip;
                     self.instructions = self.getFnOpcode(self.call_stack_ptr);
+                },
+                // ... ARGS TABLE
+                .DEFINE_TABLE => {
+                    const assign_count = @intFromEnum(self.instructions[self.ip]);
+                    self.ip += 1;
+                    var value = self.readValFromChunk();
+                    switch(value) {
+                        .table => |t| {
+                            var table = t;
+                            for (0..assign_count) |_| {
+                                const val = self.pop();
+                                const key = self.pop();
+                                table.insert(key, val);
+                            }
+                            value.table = table;
+                            self.push(value);
+                        },
+                        else => return error.InvalidTableOp
+                    }
                 },
                 _ => break
             }
@@ -368,7 +400,6 @@ pub const VM = struct {
             switch (err) {
                 error.OperandMustBeNumber => self.runtimeError("Operand must be a number."),
                 error.InvalidArithmeticOp => self.runtimeError("Can only do arithmetic operations on numbers."),
-                // error.VarNameMustBeString => self.runtimeError("Variable names must be string"),
                 error.InvalidCall => self.runtimeError("Can only call functions"),
                 error.VarUndefined => {},
                 error.ArgsMismatch => {},

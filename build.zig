@@ -4,12 +4,21 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const options = b.addOptions();
+    const debug_mode = b.option(bool, "debug", "Debug build") orelse false;
+    options.addOption(bool, "DEBUG", debug_mode);
+
+    std.debug.print("mode: {s} \n", .{if (debug_mode) "debug" else "release"});
+
     const exe = b.addExecutable(.{
         .name = "zbi",
         .root_source_file = b.path("src/main.zig") ,
         .target = target,
         .optimize = optimize,
     });
+
+
+    exe.root_module.addOptions("config", options);
 
     b.installArtifact(exe);
 

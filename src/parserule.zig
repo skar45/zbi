@@ -11,6 +11,7 @@ const literal = Parser.literal;
 const and_ = Parser.and_;
 const or_ = Parser.or_;
 const call = Parser.call;
+const table_init = Parser.table;
 
 pub const Precedence = enum(u8) {
     NONE = 0,
@@ -35,10 +36,10 @@ pub const ParseRule = struct {
 };
 
 pub const rules =  blk: {
-    var r: [40]ParseRule = undefined;
+    var r: [43]ParseRule = undefined;
     const setRule = struct {
         fn lambda(
-            cr: *[40]ParseRule,
+            cr: *[43]ParseRule,
             t_type: TokenType,
             pre: ?GrammarFn,
             inf: ?GrammarFn,
@@ -54,7 +55,7 @@ pub const rules =  blk: {
 
     setRule(&r, .LEFT_PAREN, grouping, call, .CALL);
     setRule(&r, .RIGHT_PAREN, null, null, .NONE);
-    setRule(&r, .LEFT_BRACE, null, null, .NONE);
+    setRule(&r, .LEFT_BRACE, table_init, null, .ASSIGNMENT);
     setRule(&r, .RIGHT_BRACE, null, null, .NONE);
     setRule(&r, .COMMA, null, null, .NONE);
     setRule(&r, .DOT, null, null, .NONE);
