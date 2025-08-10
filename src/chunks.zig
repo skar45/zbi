@@ -31,7 +31,7 @@ pub const OpCode = enum(usize){
     SET_GLOBAL,
     DEFINE_TABLE,
     TABLE_GET,
-    TABLE_INSERT,
+    TABLE_SET,
     CALL,
     RETURN,
     RETURN_NIL,

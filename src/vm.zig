@@ -389,6 +389,32 @@ pub const VM = struct {
                         else => return error.InvalidTableOp
                     }
                 },
+                .TABLE_GET => {
+                    const key = self.pop();
+                    const table = self.pop();
+                    switch(table) {
+                        .table => |t| {
+                            if (t.map.get(key)) |v| {
+                                self.push(v);
+                            } else {
+                                self.push(Value.setNil());
+                            }
+                        },
+                        else => return error.InvalidTableOp
+                    }
+                },
+                .TABLE_SET => {
+                    const value = self.pop();
+                    const key = self.pop();
+                    const table_val = self.pop();
+                    switch(table_val) {
+                        .table => |t| {
+                            var table = t;
+                            table.insert(key, value);
+                        },
+                        else => return error.InvalidTableOp
+                    }
+                },
                 _ => break
             }
         }

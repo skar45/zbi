@@ -12,6 +12,7 @@ const and_ = Parser.and_;
 const or_ = Parser.or_;
 const call = Parser.call;
 const table_init = Parser.table;
+const table_op = Parser.table_get_set;
 
 pub const Precedence = enum(u8) {
     NONE = 0,
@@ -58,7 +59,7 @@ pub const rules =  blk: {
     setRule(&r, .LEFT_BRACE, table_init, null, .ASSIGNMENT);
     setRule(&r, .RIGHT_BRACE, null, null, .NONE);
     setRule(&r, .COMMA, null, null, .NONE);
-    setRule(&r, .DOT, null, null, .NONE);
+    setRule(&r, .DOT, null, table_op, .ASSIGNMENT);
     setRule(&r, .MINUS, unary, binary, .TERM);
     setRule(&r, .PLUS, null, binary, .TERM);
     setRule(&r, .SEMICOLON, null, null, .NONE);
@@ -72,9 +73,9 @@ pub const rules =  blk: {
     setRule(&r, .GREATER_EQUAL, null, binary, .COMPARISON);
     setRule(&r, .LESS, null, binary, .COMPARISON);
     setRule(&r, .LESS_EQUAL, null, binary, .COMPARISON);
-    setRule(&r, .IDENTIFIER, variable, null, .NONE);
-    setRule(&r, .STRING, string, null, .NONE);
-    setRule(&r, .NUMBER, number, null, .NONE);
+    setRule(&r, .IDENTIFIER, variable, null, .PRIMARY);
+    setRule(&r, .STRING, string, null, .PRIMARY);
+    setRule(&r, .NUMBER, number, null, .PRIMARY);
     setRule(&r, .AND, and_, null, .NONE);
     setRule(&r, .CLASS, null, null, .NONE);
     setRule(&r, .ELSE, null, null, .NONE);

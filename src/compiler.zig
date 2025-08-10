@@ -68,9 +68,9 @@ pub const Parser = struct {
     token_buf: [2]Token,
     scanner: Scanner,
     compiler: *Compiler,
-    hadError: bool,
-    panicMode: bool,
-    canAssign: bool,
+    had_error: bool,
+    panic_mode: bool,
+    can_assign: bool,
     _allocator: *const Allocator,
 
     pub fn init(scanner: Scanner, compiler: *Compiler, chunks: *Chunks, allocator: *const Allocator) Parser {
@@ -82,9 +82,9 @@ pub const Parser = struct {
             .token_buf = token_buf,
             .scanner = mut_scanner,
             .compiler = compiler,
-            .hadError = false,
-            .panicMode = false,
-            .canAssign = false,
+            .had_error = false,
+            .panic_mode = false,
+            .can_assign = false,
             ._allocator = allocator
         };
     }
@@ -114,8 +114,8 @@ pub const Parser = struct {
     }
 
     inline fn errorAt(self: *Parser, token: *const Token, message: []const u8) void {
-        if (self.panicMode) return;
-        self.panicMode = true;
+        if (self.panic_mode) return;
+        self.panic_mode = true;
         const stdErr = std.io.getStdErr().writer();
         stdErr.print("[line {d}] Error", .{token.line}) catch unreachable;
         switch (token.ttype) {
@@ -124,7 +124,7 @@ pub const Parser = struct {
             else => stdErr.print(" at '{s}'", .{token.start.items}) catch unreachable
         }
         stdErr.print(" {s}\n", .{message}) catch unreachable;
-        self.hadError = true;
+        self.had_error = true;
     }
 
     inline fn errorAtPrevious(self: *Parser, message: []const u8) void {
@@ -188,7 +188,6 @@ pub const Parser = struct {
 
     inline fn makeConstant(self: *Parser, value: Value) OpCode {
         const constant = self.compilingChunk.addConstant(value);
-        std.debug.print("constant idx: {d} \n", .{@intFromEnum(constant)});
         return constant;
     }
 
@@ -249,7 +248,7 @@ pub const Parser = struct {
     }
 
     fn synchronize(self: *Parser) void {
-        self.panicMode = false;
+        self.panic_mode = false;
 
         while (!self.match(TokenType.EOF)) {
             if (self.match_prev(TokenType.SEMICOLON)) return;
@@ -265,17 +264,20 @@ pub const Parser = struct {
         return &rules[@intFromEnum(t_type)];
     }
 
-    inline fn parsePrecedence(self: *Parser, precIndex: usize) void {
+    inline fn parsePrecedence(self: *Parser, prec_index: usize) void {
         self.advance();
         const rule = getRule(self.previous().ttype);
         const prefix_fn = rule.prefix orelse {
             self.errorAtPrevious("Expected expression");
             return;
         };
-        self.canAssign = @intFromEnum(rule.precedence) <= @intFromEnum(Precedence.ASSIGNMENT);
+        self.can_assign = @intFromEnum(rule.precedence) <= @intFromEnum(Precedence.ASSIGNMENT);
+        const curr_prec = @intFromEnum(getRule(self.current().ttype).precedence);
+        std.debug.print("precedence {d} curr prec {d} token:{s}\n", .{prec_index, curr_prec, self.current().start.items});
         prefix_fn(self);
 
-        while (precIndex <= @intFromEnum(getRule(self.current().ttype).precedence)) {
+        while (prec_index <= @intFromEnum(getRule(self.current().ttype).precedence)) {
+            std.debug.print("yoo 2\n", .{});
             self.advance();
             const infix_fn = getRule(self.previous().ttype).infix orelse {
                 self.errorAtPrevious("Expected expression");
@@ -283,6 +285,7 @@ pub const Parser = struct {
             };
             infix_fn(self);
         }
+        std.debug.print("yoo \n", .{});
     }
 
     inline fn compareIdentifier(name1: *const Token, name2: *const Token) bool {
@@ -601,7 +604,7 @@ pub const Parser = struct {
             getOp = .GET_GLOBAL;
             setOp = .SET_GLOBAL;
         }
-        if (self.canAssign and self.match(.EQUAL)) {
+        if (self.can_assign and self.match(.EQUAL)) {
             self.advance();
             self.emitBytes(setOp, arg);
         } else {
@@ -668,9 +671,23 @@ pub const Parser = struct {
         self.emitConstant(value);
     }
 
-    pub fn table_get(self: *Parser) void {
-        self.emitByte(.TABLE_GET);
-        self.expression();
+    pub fn table_get_set(self: *Parser) void {
+        if (self.match(.IDENTIFIER)) {
+            self.advance();
+            const str = self.previous().start.items;
+            const value = Value.setString(str, self._allocator);
+            self.emitConstant(value);
+        } else {
+            self.expression();
+        }
+
+        if (self.match(.EQUAL)) {
+            self.advance();
+            self.expression();
+            self.emitByte(.TABLE_SET);
+        } else {
+            self.emitByte(.TABLE_GET);
+        }
     }
 
     pub fn table(self: *Parser) void {
@@ -753,6 +770,6 @@ pub fn compile(source: []u8, chunks: *Chunks, allocator: *const Allocator) bool 
     }
     parser.consume(TokenType.EOF, "Expected end of file");
     parser.endCompiler();
-    return !parser.hadError;
+    return !parser.had_error;
 }
 
