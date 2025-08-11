@@ -63,7 +63,7 @@ pub fn runFile(path: []const u8, allocator: *const Allocator) !void {
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{
         // turn on after implementing gc
-        .safety = false
+        .safety = true
     }){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();

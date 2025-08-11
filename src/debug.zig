@@ -52,12 +52,8 @@ pub const DebugCode = struct {
 
     fn defineTableInstruction(self: *DebugCode, comptime name: []const u8) usize {
         const args = self.getOpCodeInt(self.offset + 1);
-        const idx  = self.getOpCodeInt(self.offset + 2);
-        self.print("{s:<16} {d:5} ", .{name, idx});
-        const value = self.chunks.values.items[idx];
-        values.printValue(value) catch unreachable;
-        self.print("({d})\n", .{args});
-        return self.offset + 3;
+        self.print("{s:<16} {d:5}\n", .{name, args});
+        return self.offset + 2;
     }
 
     fn callInstruction(self: *DebugCode, comptime name: []const u8) usize {

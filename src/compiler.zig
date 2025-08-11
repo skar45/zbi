@@ -195,11 +195,9 @@ pub const Parser = struct {
         self.emitBytes(OpCode.CONSTANT, self.makeConstant(value));
     }
 
-    inline fn emitTable(self: *Parser, table_val: Table, assign: u8) void {
+    inline fn emitTable(self: *Parser, assign: u8) void {
         self.advance();
         self.emitBytes(.DEFINE_TABLE, @enumFromInt(assign));
-        const value = Value.initTable(table_val);
-        self.emitByte(self.makeConstant(value));
         return;
     }
 
@@ -272,12 +270,9 @@ pub const Parser = struct {
             return;
         };
         self.can_assign = @intFromEnum(rule.precedence) <= @intFromEnum(Precedence.ASSIGNMENT);
-        const curr_prec = @intFromEnum(getRule(self.current().ttype).precedence);
-        std.debug.print("precedence {d} curr prec {d} token:{s}\n", .{prec_index, curr_prec, self.current().start.items});
         prefix_fn(self);
 
         while (prec_index <= @intFromEnum(getRule(self.current().ttype).precedence)) {
-            std.debug.print("yoo 2\n", .{});
             self.advance();
             const infix_fn = getRule(self.previous().ttype).infix orelse {
                 self.errorAtPrevious("Expected expression");
@@ -285,7 +280,6 @@ pub const Parser = struct {
             };
             infix_fn(self);
         }
-        std.debug.print("yoo \n", .{});
     }
 
     inline fn compareIdentifier(name1: *const Token, name2: *const Token) bool {
@@ -691,10 +685,9 @@ pub const Parser = struct {
     }
 
     pub fn table(self: *Parser) void {
-        const table_val =  Table.init(self._allocator);
         var assign_count: u8 = 0;
         if (self.match(.RIGHT_BRACE)) {
-            self.emitTable(table_val, assign_count);
+            self.emitTable(assign_count);
         }
         while (true) {
             self.expression();
@@ -702,7 +695,7 @@ pub const Parser = struct {
             self.expression();
             assign_count += 1;
             if (self.match(.RIGHT_BRACE)) {
-                self.emitTable(table_val, assign_count);
+                self.emitTable(assign_count);
                 break;
             }
             if (assign_count == 255) {

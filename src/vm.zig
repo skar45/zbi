@@ -5,9 +5,11 @@ const debug = @import("debug.zig");
 const values = @import("values.zig");
 const compiler = @import("compiler.zig");
 
+const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const printValue = values.printValue;
 const Value = values.Value;
+const Table = values.Table;
 const Chunks = c.Chunks;
 const OpCode = c.OpCode;
 const DebugCode = debug.DebugCode;
@@ -15,6 +17,9 @@ const DebugCode = debug.DebugCode;
 const STACK_SIZE = 256;
 const MAX_CALL_STACK = 256;
 const MAX_GLOBALS = 256;
+const MAX_TABLES = 256;
+
+const table_buf_size = @sizeOf(Table) * 256 / 8;
 
 const InterpretResult = enum {
     INTERPRET_OK,
@@ -66,9 +71,16 @@ pub const VM = struct {
     call_stack: [MAX_CALL_STACK]CallFrame,
     call_stack_ptr: usize,
     globals: [MAX_GLOBALS]Value,
+    tables: ArrayList(Table),
     _allocator: *const Allocator,
+    _fba_buf: [table_buf_size]u8,
+    _fba_alloc: Allocator,
 
     pub fn init(chunks: *Chunks, allocator: *const Allocator) VM {
+        var buf: [table_buf_size]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(&buf);
+        const fba_alloc = fba.allocator();
+        const table_list = ArrayList(Table).init(fba_alloc);
         return VM {
             .chunks = chunks,
             .instructions = chunks.code_list.items[0].items,
@@ -78,7 +90,10 @@ pub const VM = struct {
             .call_stack = [_]CallFrame{CallFrame.init()} ** MAX_CALL_STACK,
             .call_stack_ptr = 0,
             .globals = [_]Value{Value.setVoid()} ** MAX_GLOBALS,
+            .tables = table_list,
             ._allocator = allocator,
+            ._fba_buf = buf,
+            ._fba_alloc = fba_alloc
         };
     }
 
@@ -352,6 +367,7 @@ pub const VM = struct {
                     for (0..(self.stack_ptr - call_stack.base_ptr)) |_| {
                         _ = self.pop();
                     }
+                    // Remove callee from the stack
                     _ = self.pop();
                     self.push(ret_val);
                     self.call_stack_ptr -= 1;
@@ -374,27 +390,22 @@ pub const VM = struct {
                 .DEFINE_TABLE => {
                     const assign_count = @intFromEnum(self.instructions[self.ip]);
                     self.ip += 1;
-                    var value = self.readValFromChunk();
-                    switch(value) {
-                        .table => |t| {
-                            var table = t;
-                            for (0..assign_count) |_| {
-                                const val = self.pop();
-                                const key = self.pop();
-                                table.insert(key, val);
-                            }
-                            value.table = table;
-                            self.push(value);
-                        },
-                        else => return error.InvalidTableOp
+                    var table = Table.init(self._allocator);
+                    for (0..assign_count) |_| {
+                        const val = self.pop();
+                        const key = self.pop();
+                        table.insert(key, val);
                     }
+                    self.tables.append(table) catch unreachable;
+                    const ptr = @constCast(&self.tables.getLast());
+                    self.push(Value.initTable(ptr));
                 },
                 .TABLE_GET => {
                     const key = self.pop();
                     const table = self.pop();
                     switch(table) {
                         .table => |t| {
-                            if (t.map.get(key)) |v| {
+                            if (t.*.map.get(key)) |v| {
                                 self.push(v);
                             } else {
                                 self.push(Value.setNil());
@@ -409,8 +420,7 @@ pub const VM = struct {
                     const table_val = self.pop();
                     switch(table_val) {
                         .table => |t| {
-                            var table = t;
-                            table.insert(key, value);
+                            t.*.insert(key, value);
                         },
                         else => return error.InvalidTableOp
                     }

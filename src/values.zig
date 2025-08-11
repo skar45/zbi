@@ -9,7 +9,7 @@ pub const Value = union(enum) {
     boolean: bool,
     number: f64,
     string: StringObj,
-    table: Table,
+    table: *Table,
     closure: ClosureObj,
     function: FnObj,
     nil,
@@ -45,7 +45,7 @@ pub const Value = union(enum) {
         };
     }
 
-    pub fn initTable(table: Table) Value {
+    pub fn initTable(table: *Table) Value {
         return Value {
             .table = table
         };
