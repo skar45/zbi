@@ -4,6 +4,7 @@ const c = @import("chunks.zig");
 const debug = @import("debug.zig");
 const values = @import("values.zig");
 const compiler = @import("compiler.zig");
+const async_ = @import("async.zig");
 
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
@@ -13,13 +14,14 @@ const Table = values.Table;
 const Chunks = c.Chunks;
 const OpCode = c.OpCode;
 const DebugCode = debug.DebugCode;
+const Future = async_.Future;
 
 const STACK_SIZE = 256;
 const MAX_CALL_STACK = 256;
 const MAX_GLOBALS = 256;
 const MAX_TABLES = 256;
 
-const table_buf_size = @sizeOf(Table) * 256 / 8;
+const TOTAL_TABLE_SIZE: comptime_int = @sizeOf(Table) * 256 / 8;
 
 const InterpretResult = enum {
     INTERPRET_OK,
@@ -45,6 +47,7 @@ pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
         return InterpretResult.INTERPRET_COMPILE_ERROR;
     }
     var vm = VM.init(&chunks, allocator);
+    defer vm.deinit();
     return vm.run();
 }
 
@@ -73,14 +76,14 @@ pub const VM = struct {
     globals: [MAX_GLOBALS]Value,
     tables: ArrayList(Table),
     _allocator: *const Allocator,
-    _fba_buf: [table_buf_size]u8,
+    _fba_buf: [TOTAL_TABLE_SIZE]u8,
     _fba_alloc: Allocator,
 
     pub fn init(chunks: *Chunks, allocator: *const Allocator) VM {
-        var buf: [table_buf_size]u8 = undefined;
+        var buf: [TOTAL_TABLE_SIZE]u8 = undefined;
         var fba = std.heap.FixedBufferAllocator.init(&buf);
         const fba_alloc = fba.allocator();
-        const table_list = ArrayList(Table).init(fba_alloc);
+        const table_list = ArrayList(Table).initCapacity(fba_alloc, 32) catch unreachable;
         return VM {
             .chunks = chunks,
             .instructions = chunks.code_list.items[0].items,
@@ -386,7 +389,7 @@ pub const VM = struct {
                     self.ip = call_stack.ret_ip;
                     self.instructions = self.getFnOpcode(self.call_stack_ptr);
                 },
-                // ... ARGS TABLE
+                // ARGLEN TABLE
                 .DEFINE_TABLE => {
                     const assign_count = @intFromEnum(self.instructions[self.ip]);
                     self.ip += 1;
@@ -444,6 +447,12 @@ pub const VM = struct {
             return InterpretResult.INTERPRET_RUNTIME_ERROR;
         };
         return InterpretResult.INTERPRET_OK;
+    }
+
+    pub fn deinit(self: *VM) void {
+        for (&self.stack) |*v| {
+            v.deinit();
+        }
     }
 
     inline fn reset(self: *VM) void {

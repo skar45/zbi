@@ -62,6 +62,15 @@ pub const Value = union(enum) {
             .nil = undefined
         };
     }
+
+    pub fn deinit(self: *Value) void {
+        switch(self.*) {
+            .string => |s| s.deinit(),
+            .table => |t| t.deinit(),
+            .closure => |c| c.deinit(),
+            else => {}
+        }
+    }
 };
 
 pub const StringObj = struct {
@@ -109,7 +118,6 @@ pub const StringObj = struct {
 
     pub fn deinit(self: *const StringObj) void {
         self._allocator.free(self.str);
-        self.str = undefined;
     }
 };
 
@@ -235,8 +243,7 @@ pub const ClosureObj = struct {
         return @intFromEnum(self.values.items.len - 1);
     }
 
-    pub fn deinit(self: *ClosureObj) void {
-        self.code.deinit();
+    pub fn deinit(self: *const ClosureObj) void {
         self.values.deinit();
     }
 };
