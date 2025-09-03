@@ -21,7 +21,7 @@ pub const TokenType = enum(usize) {
   FOR, FN, IF, NIL, OR,
   PRINT, RETURN, SUPER, THIS,
   TRUE, VAR, WHILE,
-  ERROR, EOF
+  ERROR, ASYNC, AWAIT, EOF
 };
 
 
@@ -124,7 +124,17 @@ pub const Scanner = struct {
 
     fn identifierType(self: *Scanner) TokenType {
          return switch (self.start[0]) {
-            'a' => self.checkKeyword(1, 2, "nd", TokenType.AND),
+            'a' => {
+                if (@intFromPtr(self.current.ptr) - @intFromPtr(self.start.ptr) > 1) {
+                    return switch (self.start[1]) {
+                        'n' => self.checkKeyword(2, 2, "nd", TokenType.AND),
+                        'w' => self.checkKeyword(2, 4, "wait",TokenType.AWAIT),
+                        's' => self.checkKeyword(2, 4, "sync",TokenType.ASYNC),
+                        else => TokenType.IDENTIFIER
+                    };
+                }
+                return TokenType.IDENTIFIER;
+            },
             'c' => self.checkKeyword(1, 4, "lass", TokenType.CLASS),
             'e' => self.checkKeyword(1, 3, "lse", TokenType.ELSE),
             'f' =>{
