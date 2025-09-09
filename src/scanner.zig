@@ -127,9 +127,9 @@ pub const Scanner = struct {
             'a' => {
                 if (@intFromPtr(self.current.ptr) - @intFromPtr(self.start.ptr) > 1) {
                     return switch (self.start[1]) {
-                        'n' => self.checkKeyword(2, 2, "nd", TokenType.AND),
-                        'w' => self.checkKeyword(2, 4, "wait",TokenType.AWAIT),
-                        's' => self.checkKeyword(2, 4, "sync",TokenType.ASYNC),
+                        'n' => self.checkKeyword(2, 1, "d", TokenType.AND),
+                        'w' => self.checkKeyword(2, 3, "ait",TokenType.AWAIT),
+                        's' => self.checkKeyword(2, 3, "ync",TokenType.ASYNC),
                         else => TokenType.IDENTIFIER
                     };
                 }

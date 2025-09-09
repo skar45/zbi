@@ -1,6 +1,7 @@
 const std = @import("std");
 const values = @import("values.zig");
 
+const ArrayList = std.ArrayList;
 const Condition = std.Thread.Condition;
 const Value = values.Value;
 const FnObj = values.FnObj;
@@ -9,8 +10,7 @@ const MAX_FUTURE_QUEUE = 256;
 
 pub const FutureResult = union(enum) {
     result: Value,
-    pending, 
-    err,
+    pending,
 
     pub fn init() FutureResult {
         return FutureResult {
@@ -19,17 +19,27 @@ pub const FutureResult = union(enum) {
     }
 };
 
-pub const Future = struct {
-    ret_ip: usize,
+pub const IO_Future = struct {
+    id: usize,
+    caller_id: usize,
+    ready: bool,
+};
+
+pub const BaseFuture = struct {
+    id: usize,
+    caller_id: ?usize,
     call_stack_ptr: usize,
     value: ?Value,
     ready: bool,
-    curr: usize,
+    curr_future: usize,
+    future_list: ArrayList(FutureType),
     fn_obj: FnObj,
 
-    pub fn poll(self: *Future) FutureResult {
+    pub fn poll(self: *BaseFuture) FutureResult {
         var res = FutureResult.init();
         if (!self.ready) return res;
+        const fut = self.future_list.items[self.curr_future];
+        fut.poll();
         if (self.value) |v| {
             res.result = v;
             return res;
@@ -43,8 +53,17 @@ pub const Future = struct {
     }
 };
 
+pub const FutureType = union(enum) {
+    future: BaseFuture,
+    io: IO_Future,
+
+    pub fn log_size() void {
+        @compileLog("size of future: {}", @sizeOf(FutureType));
+    }
+};
+
 pub const Executor = struct {
-    queue: [MAX_FUTURE_QUEUE]Future,
+    queue: [MAX_FUTURE_QUEUE]FutureType,
     queue_count: usize,
 
     pub fn init() Executor {
@@ -54,11 +73,13 @@ pub const Executor = struct {
         };
     }
 
-    pub fn add_future(self: *Executor, future: Future) void {
+    pub fn add_future(self: *Executor, future: FutureType) void {
         self.queue[self.queue_count] = future;
         self.queue_count += 1;
     }
 
+// execute -> poll future -> poll primitive -> request io
+// io done -> return future id -> poll future...
 //     pub fn block(self: *Executor, future: Future) void {
 // 
 //     }
