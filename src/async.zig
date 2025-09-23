@@ -1,12 +1,16 @@
 const std = @import("std");
 const values = @import("values.zig");
+const chunks = @import("chunks.zig");
 
 const ArrayList = std.ArrayList;
 const Condition = std.Thread.Condition;
 const Value = values.Value;
 const FnObj = values.FnObj;
+const OpCode = chunks.OpCode;
 
 const MAX_FUTURE_QUEUE = 256;
+
+const IOPollFn = *const fn (p: * IO_Future) void;
 
 pub const FutureResult = union(enum) {
     result: Value,
@@ -22,8 +26,27 @@ pub const FutureResult = union(enum) {
 pub const IO_Future = struct {
     id: usize,
     caller_id: usize,
+    value: ?Value,
     ready: bool,
+    poll_fn: IOPollFn,
+
+    pub fn new(id: usize, caller: usize, poll_fn: IOPollFn) IO_Future {
+        return IO_Future {
+            .id = id,
+            .caller_id = caller,
+            .value = null,
+            .ready = false,
+            .poll_fn = poll_fn
+        };
+    }
 };
+
+// async fut
+// {
+//  res = await fut;
+//  res = await fut(res);
+//  return res;
+// }
 
 pub const BaseFuture = struct {
     id: usize,
@@ -38,8 +61,13 @@ pub const BaseFuture = struct {
     pub fn poll(self: *BaseFuture) FutureResult {
         var res = FutureResult.init();
         if (!self.ready) return res;
+        // get future from current state
         const fut = self.future_list.items[self.curr_future];
-        fut.poll();
+        const res = fut.poll();
+        // switch(res) {
+            // .pending => return res,
+            // .result => |r| 
+        // }
         if (self.value) |v| {
             res.result = v;
             return res;
@@ -48,18 +76,27 @@ pub const BaseFuture = struct {
         return res;
     }
 
-    pub fn notify(self: *Future) void {
+    pub fn notify(self: *BaseFuture) void {
         self.ready = true;
     }
 };
 
 pub const FutureType = union(enum) {
-    future: BaseFuture,
+    base: BaseFuture,
     io: IO_Future,
 
     pub fn log_size() void {
         @compileLog("size of future: {}", @sizeOf(FutureType));
     }
+
+    pub fn poll(self: *FutureType) FutureResult {
+        return switch(self.*) {
+            .base => |b| b.poll(),
+            .io => |i| i.poll()
+        };
+    }
+
+    pub fn get_curr_
 };
 
 pub const Executor = struct {
@@ -84,12 +121,15 @@ pub const Executor = struct {
 // 
 //     }
 
-    pub fn execute(self: *Executor) ?FutureResult {
+    pub fn execute(self: *Executor) ?[]OpCode {
         if (self.queue_count == 0) return null;
         for (0..self.queue_count) |i| {
             const fut = self.queue[i];
             const result = fut.poll();
-            return result;
+            switch (result) {
+                .pending => return null,
+                .value => return 
+            }
         }
         return null;
     }

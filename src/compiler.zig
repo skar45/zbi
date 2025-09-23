@@ -525,6 +525,11 @@ pub const Parser = struct {
         self.consume(.SEMICOLON, "Expected ';' after return");
     }
 
+    fn asyncStmt(self: *Parser) void {
+        self.parseFunction("cannot parse async fn");
+        self.emitByte(.)
+    }
+
     fn statement(self: *Parser) void {
         switch (self.current().ttype) {
             .PRINT => {
@@ -544,6 +549,12 @@ pub const Parser = struct {
             .RETURN => {
                 self.advance();
                 self.returnStmt();
+            },
+            .ASYNC => {
+                self.advance();
+            },
+            .AWAIT => {
+                self.advance();
             },
             else => self.expressionStmt()
         }
