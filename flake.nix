@@ -1,5 +1,5 @@
 {
-  description = "poo";
+  description = "ZBI - my scripting lang";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
