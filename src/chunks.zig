@@ -29,6 +29,8 @@ pub const OpCode = enum(usize){
     SET_LOCAL,
     GET_GLOBAL,
     SET_GLOBAL,
+    GET_UPVAL,
+    SET_UPVAL,
     DEFINE_TABLE,
     TABLE_GET,
     TABLE_SET,

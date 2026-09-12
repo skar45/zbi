@@ -93,6 +93,14 @@ pub const DebugCode = struct {
         return self.offset + 2;
     }
 
+    fn closureInstruction(self: *DebugCode, comptime name: []const u8) usize {
+      const index = self.getOpCodeInt(self.offset + 2);
+      self.print("{s:<16} {d:4} ", .{name, index});
+      values.printValue(self.chunks.values.items[index]) catch unreachable;
+      self.print("\n", .{});
+      return self.offset + 2;
+    }
+
     pub fn disassembleInstruction(self: *DebugCode) !usize {
         self.print("{d:0>4} ", .{self.offset});
         if (self.offset > 0 and self.getLine(self.offset) == self.getLine(self.offset - 1)) {
@@ -132,6 +140,7 @@ pub const DebugCode = struct {
             .JUMP_IF_FALSE => self.jumpInstruction("OP_JUMP_IF_ELSE", 1),
             .LOOP => self.jumpInstruction("OP_LOOP", -1),
             .CALL => self.callInstruction("OP_CALL"),
+            .CLOSURE => self.closureInstruction("OP_CLOSURE"),
             _ => error.UnknownOpcode
         };
     }

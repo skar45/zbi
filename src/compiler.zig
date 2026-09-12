@@ -22,12 +22,14 @@ const LOGGING  = debug.ENABLE_LOGGING;
 const rules = parserule.rules;
 
 const MAX_LOCALS = 256;
+const MAX_UPVALS = 256;
 const MAX_GLOBALS = 256;
 const MAX_FUNCTIONS = 256;
 const UINT16_MAX = 1 << 16 - 1;
 
-pub const CompileFunction = struct {
+pub const CompilerFunction = struct {
     airity: u8,
+    up_value_count: u8,
     depth: u32,
     name: Token,
     has_ret: bool,
@@ -38,9 +40,15 @@ pub const Local = struct {
     depth: isize,
 };
 
+pub const UpVal = struct {
+    index: u8,
+    is_local: bool
+};
+
 pub const Compiler = struct {
     locals: [MAX_LOCALS]Local,
-    functions: [MAX_FUNCTIONS]CompileFunction,
+    up_values: [MAX_UPVALS]UpVal,
+    functions: [MAX_FUNCTIONS]CompilerFunction,
     globals: [MAX_GLOBALS]Token,
     global_count: u8,
     local_count: u32,
@@ -101,7 +109,7 @@ pub const Parser = struct {
         return self.compiler.current_frame;
     }
 
-    inline fn getCurrentCompilingFunction(self: *Parser) *CompileFunction {
+    inline fn getCurrentCompilingFunction(self: *Parser) *CompilerFunction {
         return &self.compiler.functions[self.compiler.current_frame];
     }
 
@@ -301,6 +309,34 @@ pub const Parser = struct {
         return null;
     }
 
+    inline fn addUpVal(self: *Parser, index: u8, is_local:bool) usize {
+        var current_fun = self.getCurrentCompilingFunction();
+        const up_val_count = current_fun.up_value_count;
+        for (0..up_val_count) |i| {
+            const up_val = self.compiler.up_values[i];
+            if (up_val.index == index and up_val.is_local == is_local) {
+                return i;
+            }
+        }
+        var up_val = &self.compiler[up_val_count];
+        up_val.is_local = is_local;
+        up_val.index = index;
+        current_fun.up_value_count += 1;
+        return current_fun.up_value_count;
+    }
+
+    inline fn resolveUpVal(self: *Parser, name: *const Token) ?usize {
+        const local = self.resolveLocal(name);
+        if (local != null and local != -1) {
+            return self.addUpVal(local, true);
+        }
+        const upval = self.resolveUpVal(name);
+        if (upval != -1) {
+            return self.addUpVal(local, false);
+        }
+        return -1;
+    }
+
     inline fn globalConstant(self: *Parser, name: *const Token) OpCode {
         const global_index = self.compiler.global_count;
         self.compiler.globals[global_index] = name.*;
@@ -377,11 +413,12 @@ pub const Parser = struct {
             self.errorAtPrevious("Reached function definition limit");
             return;
         }
-        const func = CompileFunction {
+        const func = CompilerFunction {
             .depth = self.compiler.scope_depth,
             .name = token.*,
             .has_ret = false,
-            .airity = 0
+            .airity = 0,
+            .up_value_count = 0
         };
         self.compiler.functions[self.compiler.function_count] = func;
         self.compiler.function_count += 1;
@@ -417,7 +454,7 @@ pub const Parser = struct {
         _ = self.advance();
     }
 
-    inline fn parseFunctionParams(self: *Parser, function: *CompileFunction) void {
+    inline fn parseFunctionParams(self: *Parser, function: *CompilerFunction) void {
         self.consume(.LEFT_PAREN, "Expected '(' after function name");
         if (!self.match(.RIGHT_PAREN)) {
             while (true) {
@@ -452,6 +489,7 @@ pub const Parser = struct {
         self.compiler.current_frame = prev_frame;
         self.emitConstant(Value.setFn(func_frame, compiler_func.airity));
         self.emitBytes(.DEFINE_GLOBAL, global);
+        self.emitBytes(.)
     }
 
     inline fn expression(self: *Parser) void {
@@ -525,10 +563,10 @@ pub const Parser = struct {
         self.consume(.SEMICOLON, "Expected ';' after return");
     }
 
-    fn asyncStmt(self: *Parser) void {
-        self.parseFunction("cannot parse async fn");
-        self.emitByte(.)
-    }
+//     fn asyncStmt(self: *Parser) void {
+//         self.parseFunction("cannot parse async fn");
+//         self.emitByte(.)
+//     }
 
     fn statement(self: *Parser) void {
         switch (self.current().ttype) {
@@ -605,9 +643,16 @@ pub const Parser = struct {
             getOp = .GET_LOCAL;
             setOp = .SET_LOCAL;
         } else {
-            arg = self.getGlobal(name);
-            getOp = .GET_GLOBAL;
-            setOp = .SET_GLOBAL;
+            arg = self.resolveUpVal(name);
+            if (arg != -1) {
+                getOp = .GET_UPVAL;
+                setOp = .SET_UPVAL;
+            } else {
+                arg = self.getGlobal(name);
+                getOp = .GET_GLOBAL;
+                setOp = .SET_GLOBAL;
+            }
+
         }
         if (self.can_assign and self.match(.EQUAL)) {
             self.advance();

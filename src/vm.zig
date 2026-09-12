@@ -359,9 +359,21 @@ pub const VM = struct {
                             self.ip = 0;
                             self.instructions = self.getFnOpcode(f.fn_segment);
                         },
-                        .closure => |_| unreachable,
+                        .closure => |closure| {
+                            const f = closure.fn_obj;
+                            if (airity != f.airity) {
+                                var buf: [256]u8 = undefined;
+                                _ = try std.fmt.bufPrint(buf[0..], "Expected {d} args", .{airity});
+                                self.runtimeError(&buf);
+                                return error.ArgsMismatch;
+                            }
+                            self.ip = 0;
+                            self.instructions = self.getFnOpcode(f.fn_segment);
+                        },
                         else => return error.InvalidCall
                     }
+                },
+                .CLOSURE => {
                 },
                 // VAL RET
                 .RETURN => {
