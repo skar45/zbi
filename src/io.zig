@@ -16,10 +16,19 @@ const IoError = error{
     SetupError
 };
 
+
+pub fn isLinux() {
+
+}
+
+
+pub const Iofn = union(enum) {
+};
+
 // Setups uo io_uring interface
 pub fn setup_io() !IoUring {
     // Platform Check
-    switch (builtin.os.tag) {
+    switch(builtin.os.tag) {
         .linux => {
             const version_range = builtin.os.versionRange();
             switch (version_range) {

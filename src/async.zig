@@ -96,7 +96,6 @@ pub const FutureType = union(enum) {
         };
     }
 
-    pub fn get_curr_
 };
 
 pub const Executor = struct {

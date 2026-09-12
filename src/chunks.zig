@@ -33,6 +33,7 @@ pub const OpCode = enum(usize){
     TABLE_GET,
     TABLE_SET,
     CALL,
+    CLOSURE,
     RETURN,
     RETURN_NIL,
     _

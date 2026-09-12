@@ -222,13 +222,12 @@ pub const FnObj = struct {
 
 pub const ClosureObj = struct {
     values: ArrayList(Value),
-    code_ptr: usize,
-    airity: u8,
+    fn_obj: *const FnObj,
     _allocator: *const Allocator,
 
-    pub fn init(allocator: *const Allocator, code_ptr: usize) ClosureObj {
+    pub fn init(allocator: *const Allocator, fn_obj: *const FnObj) ClosureObj {
         return ClosureObj {
-            .code_ptr = code_ptr,
+            .fn_obj = fn_obj,
             .value = ArrayList(Value).initCapacity(allocator, 32) catch unreachable,
             ._allocator = allocator
         };
@@ -317,6 +316,7 @@ pub fn printValue(value: Value) !void {
             try stdout.print("]", .{});
         },
         .function => |f| try stdout.print("fn {d}({d})", .{f.fn_segment, f.airity}),
+        .closure => |c| try stdout.print("cs {d}({d})", .{c.fn_obj.fn_segment, c.fn_obj.airity}),
         .nil => try stdout.print("nil ", .{}),
         .void => try stdout.print("void", .{}),
         else => try stdout.print("value formatting not implemented", .{}),
