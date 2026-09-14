@@ -37,10 +37,10 @@ pub const ParseRule = struct {
 };
 
 pub const rules =  blk: {
-    var r: [45]ParseRule = undefined;
+    var r: [50]ParseRule = undefined;
     const setRule = struct {
         fn lambda(
-            cr: *[45]ParseRule,
+            cr: *[50]ParseRule,
             t_type: TokenType,
             pre: ?GrammarFn,
             inf: ?GrammarFn,

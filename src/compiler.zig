@@ -277,7 +277,7 @@ pub const Parser = struct {
         self.advance();
         const rule = getRule(self.previous().ttype);
         const prefix_fn = rule.prefix orelse {
-            self.errorAtPrevious("Expected expression");
+            self.errorAtPrevious("Expected prefix expression");
             return;
         };
         self.can_assign = @intFromEnum(rule.precedence) <= @intFromEnum(Precedence.ASSIGNMENT);
@@ -286,7 +286,7 @@ pub const Parser = struct {
         while (prec_index <= @intFromEnum(getRule(self.current().ttype).precedence)) {
             self.advance();
             const infix_fn = getRule(self.previous().ttype).infix orelse {
-                self.errorAtPrevious("Expected expression");
+                self.errorAtPrevious("Expected infix expression");
                 return;
             };
             infix_fn(self);
@@ -329,14 +329,15 @@ pub const Parser = struct {
     }
 
     fn resolveUpVal(self: *Parser, name: *const Token) ?usize {
+        std.debug.print("testing this {s}\n", .{name.start.items});
         const local = self.resolveLocal(name);
         if (local) |l| {
             return self.addUpVal(l, true);
         }
-        const upval = self.resolveUpVal(name);
-        if (upval) |val| {
-            return self.addUpVal(val, false);
-        }
+//         const upval = self.resolveUpVal(name);
+//         if (upval) |val| {
+//             return self.addUpVal(val, false);
+//         }
         return null;
     }
 
@@ -451,7 +452,7 @@ pub const Parser = struct {
     inline fn parseFunctionBody(self: *Parser) void {
         self.consume(.LEFT_BRACE, "Expected '{' after function declaration");
         while (!self.match(.RIGHT_BRACE)) {
-            self.statement();
+            self.declaration();
             if (self.match(.EOF)) self.errorAtPrevious("Expected '}'");
         }
         _ = self.advance();
@@ -622,7 +623,7 @@ pub const Parser = struct {
         self.defineVariable(global);
     }
 
-    inline fn declaration(self: *Parser) void {
+    fn declaration(self: *Parser) void {
         switch (self.current().ttype) {
             .VAR => {
                 self.advance();

@@ -63,11 +63,10 @@ pub const DebugCode = struct {
     fn jumpInstruction(self: *DebugCode, comptime name: []const u8, sign: isize) usize {
         var jump = self.getOpCodeInt(self.offset + 1) << 8;
         jump |= self.getOpCodeInt(self.offset + 2);
-        const index = self.getOpCodeInt(self.offset + 1);
         const ioffset: isize = @intCast(self.offset);
         const ijump: isize = @intCast(jump);
         const target = ioffset + 3 + sign * ijump;
-        self.print("{s:<16} {d:0>3} -> {d}\n", .{name, index, target});
+        self.print("{s:<16} {d:0>3} -> {d}\n", .{name, jump, target});
         return self.offset + 3;
     }
 
@@ -129,18 +128,18 @@ pub const DebugCode = struct {
             .GET_LOCAL => self.byteInstruction("OP_GET_LOCAL"),
             .SET_LOCAL => self.byteInstruction("OP_SET_LOCAL"),
             .DEFINE_GLOBAL => self.defineGlobalInstruction("OP_DEFINE_GLOBAL"),
-            .GET_GLOBAL => self.constantInstruction("OP_GET_GLOBAL"),
-            .SET_GLOBAL => self.constantInstruction("OP_SET_GLOBAL"),
+            .GET_GLOBAL => self.byteInstruction("OP_GET_GLOBAL"),
+            .SET_GLOBAL => self.byteInstruction("OP_SET_GLOBAL"),
             .DEFINE_TABLE => self.defineTableInstruction("OP_DEFINE_TABLE"),
-            .TABLE_GET => self.byteInstruction("OP_TABLE_GET"),
-            .TABLE_SET => self.byteInstruction("OP_TABLE_SET"),
+            .TABLE_GET => self.simpleInstruction("OP_TABLE_GET"),
+            .TABLE_SET => self.simpleInstruction("OP_TABLE_SET"),
             .JUMP => self.jumpInstruction("OP_JUMP", 1),
-            .JUMP_IF_FALSE => self.jumpInstruction("OP_JUMP_IF_ELSE", 1),
+            .JUMP_IF_FALSE => self.jumpInstruction("OP_JUMP_IF_FALSE", 1),
             .LOOP => self.jumpInstruction("OP_LOOP", -1),
             .CALL => self.callInstruction("OP_CALL"),
             .CLOSURE => self.closureInstruction("OP_CLOSURE"),
-            .GET_UPVAL => self.constantInstruction("OP_GET_UPVAL"),
-            .SET_UPVAL => self.constantInstruction("OP_SET_UPVAL"),
+            .GET_UPVAL => self.byteInstruction("OP_GET_UPVAL"),
+            .SET_UPVAL => self.byteInstruction("OP_SET_UPVAL"),
             _ => error.UnknownOpcode
         };
     }
@@ -151,6 +150,7 @@ pub const DebugCode = struct {
         for (0..self.chunks.code_list.items.len) |idx| {
             std.debug.print("\n", .{});
             std.debug.print("=== {d} ===\n", .{idx});
+            self.segment = idx;
             self.offset = 0;
             while (self.offset < self.chunks.code_list.items[idx].items.len){
                 self.offset = try self.disassembleInstruction();
