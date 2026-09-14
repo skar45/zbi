@@ -30,17 +30,22 @@ const Chunks = chunks.Chunks;
 //   - concurrent batched free
 
 
-pub fn repl(allocator: *const Allocator) !void {
-    const stdout = std.io.getStdOut().writer();
-    const stdin = std.io.getStdIn().reader();
-    var line: [1024]u8 = [_]u8{0} ** 1024;
+pub fn repl(io: std.Io, allocator: *const Allocator) !void {
+    var stdout_buf: [1024]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writerStreaming(io, &stdout_buf);
+    const stdout = &stdout_writer.interface;
+    var stdin_buf: [1024]u8 = undefined;
+    var stdin_reader = std.Io.File.stdin().readerStreaming(io, &stdin_buf);
+    const stdin = &stdin_reader.interface;
+    // scanner reads past the end of the source, so keep it zero padded
+    var line: [stdin_buf.len + 16]u8 = undefined;
     while (true) {
         try stdout.print("> ", .{});
-        _ = try stdin.read(&line);
-        if (line.len <= 0) {
-            break;
-        }
-        const result = interpret(&line, allocator);
+        try stdout.flush();
+        const input = try stdin.takeDelimiter('\n') orelse break;
+        @memset(&line, 0);
+        @memcpy(line[0..input.len], input);
+        const result = interpret(io, &line, allocator);
         switch (result) {
             .INTERPRET_COMPILE_ERROR => std.debug.print("compile error \n", .{}),
             .INTERPRET_OK => std.debug.print("", .{}),
@@ -49,9 +54,13 @@ pub fn repl(allocator: *const Allocator) !void {
     }
 }
 
-pub fn runFile(path: []const u8, allocator: *const Allocator) !void {
-    const file = try std.fs.cwd().readFileAlloc(allocator.*, path, 4096 * 10);
-    const result = interpret(file, allocator);
+pub fn runFile(io: std.Io, path: []const u8, allocator: *const Allocator) !void {
+    const contents = try std.Io.Dir.cwd().readFileAlloc(io, path, allocator.*, .limited(4096 * 10));
+    // scanner reads past the end of the source, so keep it zero padded
+    const file = try allocator.alloc(u8, contents.len + 16);
+    @memset(file, 0);
+    @memcpy(file[0..contents.len], contents);
+    const result = interpret(io, file, allocator);
     switch (result) {
         .INTERPRET_COMPILE_ERROR => std.debug.print("compile error \n", .{}),
         .INTERPRET_OK => std.debug.print("", .{}),
@@ -60,14 +69,11 @@ pub fn runFile(path: []const u8, allocator: *const Allocator) !void {
 }
 
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{
-        // turn on after implementing gc
-        .safety = true
-    }){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-    var args_iter = try std.process.argsWithAllocator(allocator);
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const allocator = init.arena.allocator();
+    var args_iter = try init.minimal.args.iterateAllocator(allocator);
+    defer args_iter.deinit();
     if (args_iter.skip() == false) {
         std.debug.print("Usage: zbi [path]\n", .{});
         std.process.exit(64);
@@ -78,9 +84,9 @@ pub fn main() !void {
         std.process.exit(64);
     }
     if (file_path) |path| {
-        try runFile(path, &allocator);
+        try runFile(io, path, &allocator);
     } else {
-        try repl(&allocator);
+        try repl(io, &allocator);
     }
 }
 

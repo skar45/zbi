@@ -48,7 +48,7 @@ pub const Chunks = struct {
     _arena: ArenaAllocator,
 
     inline fn allocatorError(err: std.mem.Allocator.Error) void {
-        std.debug.print("{}", .{err});
+        std.debug.print("{t}", .{err});
         std.process.exit(70);
     }
 
@@ -58,7 +58,7 @@ pub const Chunks = struct {
         var code_list = ArrayList(ArrayList(OpCode)).initCapacity(allocator, 4096) catch |e| allocatorError(e);
 
         const init_frame = ArrayList(OpCode).initCapacity(allocator, 4096) catch |e| allocatorError(e);
-        code_list.append(init_frame) catch |e| allocatorError(e);
+        code_list.append(allocator, init_frame) catch |e| allocatorError(e);
 
         const values_list = ArrayList(Value).initCapacity(allocator, 1024) catch |e| allocatorError(e);
         const lines = ArrayList(usize).initCapacity(allocator, 256) catch |e| allocatorError(e);
@@ -74,16 +74,17 @@ pub const Chunks = struct {
     pub inline fn addCodeSegment(self: *Chunks) void {
         const allocator = self._arena.allocator();
         const code = ArrayList(OpCode).initCapacity(allocator, 4096) catch |e| allocatorError(e);
-        self.code_list.append(code) catch |e| allocatorError(e);
+        self.code_list.append(allocator, code) catch |e| allocatorError(e);
     }
 
     pub inline fn writeChunk(self: *Chunks, frame_idx: usize, code: OpCode, line: usize) void {
-        self.code_list.items[frame_idx].append(code) catch |e| allocatorError(e);
-        self.lines.append(line) catch |e| allocatorError(e);
+        const allocator = self._arena.allocator();
+        self.code_list.items[frame_idx].append(allocator, code) catch |e| allocatorError(e);
+        self.lines.append(allocator, line) catch |e| allocatorError(e);
     }
 
     pub inline fn addConstant(self: *Chunks, value: Value) OpCode {
-        self.values.append(value) catch |e| allocatorError(e);
+        self.values.append(self._arena.allocator(), value) catch |e| allocatorError(e);
         // TODO: account for overflow
         return @enumFromInt(self.values.items.len - 1);
     }

@@ -62,8 +62,8 @@ pub const BaseFuture = struct {
         var res = FutureResult.init();
         if (!self.ready) return res;
         // get future from current state
-        const fut = self.future_list.items[self.curr_future];
-        const res = fut.poll();
+//         const fut = self.future_list.items[self.curr_future];
+//         const res2 = fut.poll();
         // switch(res) {
             // .pending => return res,
             // .result => |r| 

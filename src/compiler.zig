@@ -41,7 +41,7 @@ pub const Local = struct {
 };
 
 pub const UpVal = struct {
-    index: u8,
+    index: usize,
     is_local: bool
 };
 
@@ -59,7 +59,9 @@ pub const Compiler = struct {
     pub fn init() Compiler {
         return Compiler {
             .locals = undefined,
-            .functions = undefined,
+            // fnDeclaration reads functions[current_frame] before anything writes it
+            .functions = [_]CompilerFunction{std.mem.zeroes(CompilerFunction)} ** MAX_FUNCTIONS,
+            .up_values = undefined,
             .globals = undefined,
             .global_count = 0,
             // skip main function
@@ -80,8 +82,9 @@ pub const Parser = struct {
     panic_mode: bool,
     can_assign: bool,
     _allocator: *const Allocator,
+    stdout: *std.Io.Writer,
 
-    pub fn init(scanner: Scanner, compiler: *Compiler, chunks: *Chunks, allocator: *const Allocator) Parser {
+    pub fn init(scanner: Scanner, compiler: *Compiler, chunks: *Chunks, allocator: *const Allocator, stdout: *std.Io.Writer) Parser {
         var mut_scanner = scanner;
         const token = mut_scanner.scanToken();
         const token_buf: [2]Token = [2]Token{token, token};
@@ -93,7 +96,8 @@ pub const Parser = struct {
             .had_error = false,
             .panic_mode = false,
             .can_assign = false,
-            ._allocator = allocator
+            ._allocator = allocator,
+            .stdout = stdout
         };
     }
 
@@ -124,14 +128,13 @@ pub const Parser = struct {
     inline fn errorAt(self: *Parser, token: *const Token, message: []const u8) void {
         if (self.panic_mode) return;
         self.panic_mode = true;
-        const stdErr = std.io.getStdErr().writer();
-        stdErr.print("[line {d}] Error", .{token.line}) catch unreachable;
+        std.debug.print("[line {d}] Error", .{token.line});
         switch (token.ttype) {
-            TokenType.EOF => stdErr.print(" at end", .{}) catch unreachable,
+            TokenType.EOF => std.debug.print(" at end", .{}),
             TokenType.ERROR => {},
-            else => stdErr.print(" at '{s}'", .{token.start.items}) catch unreachable
+            else => std.debug.print(" at '{s}'", .{token.start.items})
         }
-        stdErr.print(" {s}\n", .{message}) catch unreachable;
+        std.debug.print(" {s}\n", .{message});
         self.had_error = true;
     }
 
@@ -221,7 +224,7 @@ pub const Parser = struct {
 
     pub inline fn endCompiler(self: *Parser) void {
         if (comptime LOGGING) {
-            var debug_trace = DebugCode.init(0, 0, self.compilingChunk);
+            var debug_trace = DebugCode.init(0, 0, self.compilingChunk, self.stdout);
             debug_trace.disassembleChunk("code") catch {
                 self.errorAtCurrent("Coud not run debug trace");
             };
@@ -309,7 +312,7 @@ pub const Parser = struct {
         return null;
     }
 
-    inline fn addUpVal(self: *Parser, index: u8, is_local:bool) usize {
+    inline fn addUpVal(self: *Parser, index: usize, is_local:bool) usize {
         var current_fun = self.getCurrentCompilingFunction();
         const up_val_count = current_fun.up_value_count;
         for (0..up_val_count) |i| {
@@ -318,23 +321,23 @@ pub const Parser = struct {
                 return i;
             }
         }
-        var up_val = &self.compiler[up_val_count];
+        var up_val = &self.compiler.up_values[up_val_count];
         up_val.is_local = is_local;
         up_val.index = index;
         current_fun.up_value_count += 1;
         return current_fun.up_value_count;
     }
 
-    inline fn resolveUpVal(self: *Parser, name: *const Token) ?usize {
+    fn resolveUpVal(self: *Parser, name: *const Token) ?usize {
         const local = self.resolveLocal(name);
-        if (local != null and local != -1) {
-            return self.addUpVal(local, true);
+        if (local) |l| {
+            return self.addUpVal(l, true);
         }
         const upval = self.resolveUpVal(name);
-        if (upval != -1) {
-            return self.addUpVal(local, false);
+        if (upval) |val| {
+            return self.addUpVal(val, false);
         }
-        return -1;
+        return null;
     }
 
     inline fn globalConstant(self: *Parser, name: *const Token) OpCode {
@@ -489,7 +492,6 @@ pub const Parser = struct {
         self.compiler.current_frame = prev_frame;
         self.emitConstant(Value.setFn(func_frame, compiler_func.airity));
         self.emitBytes(.DEFINE_GLOBAL, global);
-        self.emitBytes(.)
     }
 
     inline fn expression(self: *Parser) void {
@@ -643,8 +645,8 @@ pub const Parser = struct {
             getOp = .GET_LOCAL;
             setOp = .SET_LOCAL;
         } else {
-            arg = self.resolveUpVal(name);
-            if (arg != -1) {
+            if (self.resolveUpVal(name)) |val| {
+                arg = @enumFromInt(val);
                 getOp = .GET_UPVAL;
                 setOp = .SET_UPVAL;
             } else {
@@ -652,7 +654,6 @@ pub const Parser = struct {
                 getOp = .GET_GLOBAL;
                 setOp = .SET_GLOBAL;
             }
-
         }
         if (self.can_assign and self.match(.EQUAL)) {
             self.advance();
@@ -809,11 +810,11 @@ pub const Parser = struct {
     }
 };
 
-pub fn compile(source: []u8, chunks: *Chunks, allocator: *const Allocator) bool {
+pub fn compile(source: []u8, chunks: *Chunks, allocator: *const Allocator, stdout: *std.Io.Writer) bool {
     var scanner = Scanner.init(source);
     defer scanner.deinit();
     var compiler = Compiler.init();
-    var parser = Parser.init(scanner, &compiler, chunks, allocator);
+    var parser = Parser.init(scanner, &compiler, chunks, allocator, stdout);
     while (!parser.match(TokenType.EOF)) {
         parser.declaration();
     }

@@ -39,14 +39,19 @@ const VmError = error{
     InvalidTableOp
 };
 
-pub fn interpret(source: []u8, allocator: *const Allocator) InterpretResult {
+pub fn interpret(io: std.Io, source: []u8, allocator: *const Allocator) InterpretResult {
     // @compileLog("size of 'Value'", @sizeOf(Value));
+    // unbuffered when logging so output interleaves with std.debug.print
+    var stdout_buf: [if (debug.ENABLE_LOGGING) 0 else 4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writerStreaming(io, &stdout_buf);
+    const stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
     var chunks = Chunks.init();
     defer chunks.deinit();
-    if (!compiler.compile(source, &chunks, allocator)) {
+    if (!compiler.compile(source, &chunks, allocator, stdout)) {
         return InterpretResult.INTERPRET_COMPILE_ERROR;
     }
-    var vm = VM.init(&chunks, allocator);
+    var vm = VM.init(&chunks, allocator, stdout);
     defer vm.deinit();
     return vm.run();
 }
@@ -78,9 +83,10 @@ pub const VM = struct {
     _allocator: *const Allocator,
     _fba_buf: [TOTAL_TABLE_SIZE]u8,
     _fba_alloc: Allocator,
+    stdout: *std.Io.Writer,
 
-    pub fn init(chunks: *Chunks, allocator: *const Allocator) VM {
-        var buf: [TOTAL_TABLE_SIZE]u8 = undefined;
+    pub fn init(chunks: *Chunks, allocator: *const Allocator, stdout: *std.Io.Writer) VM {
+        var buf: [TOTAL_TABLE_SIZE]u8 align(@alignOf(Table)) = undefined;
         var fba = std.heap.FixedBufferAllocator.init(&buf);
         const fba_alloc = fba.allocator();
         const table_list = ArrayList(Table).initCapacity(fba_alloc, 32) catch unreachable;
@@ -96,7 +102,8 @@ pub const VM = struct {
             .tables = table_list,
             ._allocator = allocator,
             ._fba_buf = buf,
-            ._fba_alloc = fba_alloc
+            ._fba_alloc = fba_alloc,
+            .stdout = stdout
         };
     }
 
@@ -106,7 +113,7 @@ pub const VM = struct {
                 .void => break,
                 else => {
                     std.debug.print("[ ", .{});
-                    printValue(v) catch unreachable;
+                    printValue(self.stdout, v) catch unreachable;
                     std.debug.print(" ]", .{});
                 }
             }
@@ -126,17 +133,18 @@ pub const VM = struct {
 //         std.debug.print("constants: ", .{});
 //         for (self.chunks.values.items) |v| {
 //             std.debug.print("[ ", .{});
-//             printValue(v) catch unreachable;
+//             printValue(self.stdout, v) catch unreachable;
 //             std.debug.print(" ]", .{});
 //         }
 // 
 //         std.debug.print("\n", .{});
         const off: usize = self.ip;
-        var debug_trace = DebugCode.init(segment, off, self.chunks);
+        var debug_trace = DebugCode.init(segment, off, self.chunks, self.stdout);
         _ = try debug_trace.disassembleInstruction();
     }
 
     fn runtimeError(self: *VM, format: []const u8) void {
+        self.stdout.flush() catch {};
         std.debug.print("{s} \n", .{format});
         const instruction: usize  = self.ip;
         const line: usize = self.chunks.lines.items[instruction];
@@ -273,9 +281,9 @@ pub const VM = struct {
                     }
                 },
                 .PRINT => {
-                    const stdout = std.io.getStdOut();
-                    try printValue(self.pop());
-                    _ = try stdout.writer().write("\n");
+                    try printValue(self.stdout, self.pop());
+                    try self.stdout.writeAll("\n");
+                    try self.stdout.flush();
                 },
                 .DEFINE_GLOBAL => {
                     const global_index: usize = @intFromEnum(self.instructions[self.ip]);
@@ -352,8 +360,8 @@ pub const VM = struct {
                         .function => |f| {
                             if (airity != f.airity) {
                                 var buf: [256]u8 = undefined;
-                                _ = try std.fmt.bufPrint(buf[0..], "Expected {d} args", .{airity});
-                                self.runtimeError(&buf);
+                                const msg = try std.fmt.bufPrint(buf[0..], "Expected {d} args", .{airity});
+                                self.runtimeError(msg);
                                 return error.ArgsMismatch;
                             }
                             self.ip = 0;
@@ -363,8 +371,8 @@ pub const VM = struct {
                             const f = closure.fn_obj;
                             if (airity != f.airity) {
                                 var buf: [256]u8 = undefined;
-                                _ = try std.fmt.bufPrint(buf[0..], "Expected {d} args", .{airity});
-                                self.runtimeError(&buf);
+                                const msg = try std.fmt.bufPrint(buf[0..], "Expected {d} args", .{airity});
+                                self.runtimeError(msg);
                                 return error.ArgsMismatch;
                             }
                             self.ip = 0;
@@ -372,8 +380,6 @@ pub const VM = struct {
                         },
                         else => return error.InvalidCall
                     }
-                },
-                .CLOSURE => {
                 },
                 // VAL RET
                 .RETURN => {
@@ -411,7 +417,7 @@ pub const VM = struct {
                         const key = self.pop();
                         table.insert(key, val);
                     }
-                    self.tables.append(table) catch unreachable;
+                    self.tables.append(self._fba_alloc, table) catch unreachable;
                     const ptr = @constCast(&self.tables.getLast());
                     self.push(Value.initTable(ptr));
                 },
@@ -440,6 +446,7 @@ pub const VM = struct {
                         else => return error.InvalidTableOp
                     }
                 },
+                else => unreachable,
                 _ => break
             }
         }

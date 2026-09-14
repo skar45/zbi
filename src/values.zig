@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
-const ArrayHashMap = std.ArrayHashMap;
+const ArrayHashMap = std.array_hash_map.Custom;
 const OpCode = @import("chunks.zig").OpCode;
 
 pub const Value = union(enum) {
@@ -67,7 +67,7 @@ pub const Value = union(enum) {
         switch(self.*) {
             .string => |s| s.deinit(),
             .table => |t| t.deinit(),
-            .closure => |c| c.deinit(),
+            .closure => |*c| c.deinit(),
             else => {}
         }
     }
@@ -124,22 +124,24 @@ pub const StringObj = struct {
 pub const Table = struct {
     map: ArrayHashMap(Value, Value, TableHash, true),
     count: usize,
+    _allocator: *const Allocator,
 
     pub fn init(allocator: *const Allocator) Table {
         return Table {
-            .map = ArrayHashMap(Value, Value, TableHash, true).init(allocator.*),
-            .count = 0
+            .map = .empty,
+            .count = 0,
+            ._allocator = allocator
         };
     }
 
     pub fn deinit(self: *Table) void {
-        self.map.deinit();
+        self.map.deinit(self._allocator.*);
     }
 
     pub fn insert(self: *Table, k: Value, v: Value) void {
         switch (k) {
             .table, .void => unreachable,
-            else => self.map.put(k, v) catch {
+            else => self.map.put(self._allocator.*, k, v) catch {
                 std.debug.print("errror \n", .{});
             }
         }
@@ -228,7 +230,7 @@ pub const ClosureObj = struct {
     pub fn init(allocator: *const Allocator, fn_obj: *const FnObj) ClosureObj {
         return ClosureObj {
             .fn_obj = fn_obj,
-            .value = ArrayList(Value).initCapacity(allocator, 32) catch unreachable,
+            .values = ArrayList(Value).initCapacity(allocator.*, 32) catch unreachable,
             ._allocator = allocator
         };
     }
@@ -238,12 +240,12 @@ pub const ClosureObj = struct {
     }
 
     pub fn addConstant(self: *ClosureObj, value: Value) OpCode {
-        self.values.append(value);
+        self.values.append(self._allocator.*, value);
         return @intFromEnum(self.values.items.len - 1);
     }
 
-    pub fn deinit(self: *const ClosureObj) void {
-        self.values.deinit();
+    pub fn deinit(self: *ClosureObj) void {
+        self.values.deinit(self._allocator.*);
     }
 };
 
@@ -288,8 +290,7 @@ pub const ClosureObj = struct {
 // };
 
 
-pub fn printValue(value: Value) !void {
-    const stdout = std.io.getStdOut().writer();
+pub fn printValue(stdout: *std.Io.Writer, value: Value) !void {
     switch (value) {
         .boolean => |b| try stdout.print("{} ", .{b}),
         .number => |n| try stdout.print("{d} ", .{n}),
@@ -301,13 +302,13 @@ pub fn printValue(value: Value) !void {
                     .string => |s| {
                         try stdout.print("[{s}]: ", .{s.str});
                         const val = t.get(k);
-                        try printValue(val);
+                        try printValue(stdout, val);
                         try stdout.print(", ", .{});
                     },
                     .number => |n| {
                         try stdout.print("[{d}]: ", .{n});
                         const val = t.get(k);
-                        try printValue(val);
+                        try printValue(stdout, val);
                         try stdout.print(", ", .{});
                     },
                     else => unreachable
@@ -319,6 +320,5 @@ pub fn printValue(value: Value) !void {
         .closure => |c| try stdout.print("cs {d}({d})", .{c.fn_obj.fn_segment, c.fn_obj.airity}),
         .nil => try stdout.print("nil ", .{}),
         .void => try stdout.print("void", .{}),
-        else => try stdout.print("value formatting not implemented", .{}),
     }
 }

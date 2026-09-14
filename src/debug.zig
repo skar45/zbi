@@ -9,21 +9,19 @@ const Chunks = c.Chunks;
 
 
 pub const ENABLE_LOGGING = config.DEBUG;
-pub const Writer = std.io.Writer(std.fs.File, std.posix.WriteError, std.fs.File.write);
 
 pub const DebugCode = struct {
     segment: usize,
     offset: usize,
     chunks: *Chunks,
-    stdout: Writer,
+    stdout: *std.Io.Writer,
 
-    pub fn init(segment: usize, offset: usize, chunks: *Chunks) DebugCode {
-        const writer = std.io.getStdOut().writer();
+    pub fn init(segment: usize, offset: usize, chunks: *Chunks, stdout: *std.Io.Writer) DebugCode {
         return DebugCode {
             .segment = segment,
             .offset = offset,
             .chunks = chunks,
-            .stdout = writer
+            .stdout = stdout
         };
     }
 
@@ -88,7 +86,7 @@ pub const DebugCode = struct {
     fn constantInstruction(self: *DebugCode, comptime name: []const u8) usize {
         const index = self.getOpCodeInt(self.offset + 1);
         self.print("{s:<16} {d:5} ", .{name, index});
-        values.printValue(self.chunks.values.items[index]) catch unreachable;
+        values.printValue(self.stdout, self.chunks.values.items[index]) catch unreachable;
         self.print("\n", .{});
         return self.offset + 2;
     }
@@ -96,7 +94,7 @@ pub const DebugCode = struct {
     fn closureInstruction(self: *DebugCode, comptime name: []const u8) usize {
       const index = self.getOpCodeInt(self.offset + 2);
       self.print("{s:<16} {d:4} ", .{name, index});
-      values.printValue(self.chunks.values.items[index]) catch unreachable;
+      values.printValue(self.stdout, self.chunks.values.items[index]) catch unreachable;
       self.print("\n", .{});
       return self.offset + 2;
     }
@@ -141,6 +139,8 @@ pub const DebugCode = struct {
             .LOOP => self.jumpInstruction("OP_LOOP", -1),
             .CALL => self.callInstruction("OP_CALL"),
             .CLOSURE => self.closureInstruction("OP_CLOSURE"),
+            .GET_UPVAL => self.constantInstruction("OP_GET_UPVAL"),
+            .SET_UPVAL => self.constantInstruction("OP_SET_UPVAL"),
             _ => error.UnknownOpcode
         };
     }

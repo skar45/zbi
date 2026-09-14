@@ -94,6 +94,11 @@ pub const rules =  blk: {
     setRule(&r, .WHILE, null, null, .NONE);
     setRule(&r, .ERROR, null, null, .NONE);
     setRule(&r, .EOF, null, null, .NONE);
+    setRule(&r, .COLON, null, null, .NONE);
+    setRule(&r, .LEFT_BRACKET, null, null, .NONE);
+    setRule(&r, .RIGHT_BRACKET, null, null, .NONE);
+    setRule(&r, .ASYNC, null, null, .NONE);
+    setRule(&r, .AWAIT, null, null, .NONE);
 
     break :blk r;
 };

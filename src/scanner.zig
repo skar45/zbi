@@ -36,10 +36,10 @@ pub const Scanner = struct {
     current: []const u8,
     end: usize,
     line: usize,
-    _allocator: std.heap.GeneralPurposeAllocator(.{}),
+    _allocator: std.heap.DebugAllocator(.{}),
 
     pub fn init(source: []const u8) Scanner {
-        const allocator = std.heap.GeneralPurposeAllocator(.{}).init;
+        const allocator = std.heap.DebugAllocator(.{}).init;
         return Scanner {
             .start = source,
             .current = source,
@@ -175,7 +175,7 @@ pub const Scanner = struct {
         const token_len: usize = @intFromPtr(self.current.ptr) - @intFromPtr(self.start.ptr);
         var list = ArrayList(u8).initCapacity(self._allocator.allocator(), token_len) catch unreachable;
         for (self.start[0..token_len]) |v| {
-            list.append(v) catch unreachable;
+            list.appendAssumeCapacity(v);
         }
         const token = Token {
             .ttype = ttype,
@@ -188,7 +188,7 @@ pub const Scanner = struct {
     fn errorToken(self: *Scanner, message: []const u8) Token {
         var list = ArrayList(u8).initCapacity(self._allocator.allocator(), message.len) catch unreachable;
         for (message) |v| {
-            list.append(v) catch unreachable;
+            list.appendAssumeCapacity(v);
         }
         const token = Token {
             .ttype = TokenType.ERROR,
