@@ -91,11 +91,14 @@ pub const DebugCode = struct {
     }
 
     fn closureInstruction(self: *DebugCode, comptime name: []const u8) usize {
+//       const func = self.getOpCodeInt(self.offset + 1);
       const index = self.getOpCodeInt(self.offset + 2);
-      self.print("{s:<16} {d:4} ", .{name, index});
-      values.printValue(self.stdout, self.chunks.values.items[index]) catch unreachable;
-      self.print("\n", .{});
-      return self.offset + 2;
+      self.print("{s:<16} \n", .{name});
+      for (0..index) |i| {
+          const upval = self.getOpCodeInt(self.offset + 2 + i);
+          self.print("{s:<16} {d:5} \n", .{"upval", upval});
+      }
+      return self.offset + 3 + index;
     }
 
     pub fn disassembleInstruction(self: *DebugCode) !usize {

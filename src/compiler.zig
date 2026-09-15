@@ -493,9 +493,14 @@ pub const Parser = struct {
         self.endScope();
 
         const func_frame = self.compiler.current_frame;
+        const up_val_count = compiler_func.up_value_count;
         self.compiler.current_frame = prev_frame;
         self.emitConstant(Value.setFn(func_frame, compiler_func.airity));
         self.emitBytes(.CLOSURE, global);
+        self.emitByte(@enumFromInt(up_val_count));
+        for (0..up_val_count) |i| {
+            self.emitByte(@enumFromInt(self.compiler.up_values[i].index));
+        }
     }
 
     inline fn expression(self: *Parser) void {
