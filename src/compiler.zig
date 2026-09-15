@@ -297,14 +297,18 @@ pub const Parser = struct {
        return std.mem.eql(u8, name1.start.items, name2.start.items);
     }
 
-    inline fn resolveLocal(self: *Parser, name: *const Token) ?usize {
+    inline fn resolveLocal(self: *Parser, name: *const Token, comptime closure: bool) ?usize {
         const local_count = self.compiler.local_count;
+        const scope_depth = self.compiler.scope_depth;
         for (0..local_count) |i| {
             const index = local_count - 1 - i;
             const local = self.compiler.locals[index];
             if (compareIdentifier(name, &local.name)) {
                 if (local.depth == -1) {
                     self.errorAtCurrent("Can't read variables in its own initializer");
+                }
+                if ((local.depth < scope_depth) and closure) {
+                    return null;
                 }
                 return index;
             }
@@ -329,8 +333,7 @@ pub const Parser = struct {
     }
 
     fn resolveUpVal(self: *Parser, name: *const Token) ?usize {
-        std.debug.print("testing this {s}\n", .{name.start.items});
-        const local = self.resolveLocal(name);
+        const local = self.resolveLocal(name, false);
         if (local) |l| {
             return self.addUpVal(l, true);
         }
@@ -492,7 +495,7 @@ pub const Parser = struct {
         const func_frame = self.compiler.current_frame;
         self.compiler.current_frame = prev_frame;
         self.emitConstant(Value.setFn(func_frame, compiler_func.airity));
-        self.emitBytes(.DEFINE_GLOBAL, global);
+        self.emitBytes(.CLOSURE, global);
     }
 
     inline fn expression(self: *Parser) void {
@@ -641,12 +644,13 @@ pub const Parser = struct {
         var getOp: OpCode = undefined;
         var setOp: OpCode = undefined;
         var arg: OpCode = undefined;
-        if (self.resolveLocal(name)) |v| {
+        if (self.resolveLocal(name, true)) |v| {
             arg = @enumFromInt(v);
             getOp = .GET_LOCAL;
             setOp = .SET_LOCAL;
         } else {
             if (self.resolveUpVal(name)) |val| {
+                std.debug.print("hello?? \n", .{});
                 arg = @enumFromInt(val);
                 getOp = .GET_UPVAL;
                 setOp = .SET_UPVAL;
