@@ -7,7 +7,8 @@ fn test() {
     var f = e + 1;
     print d;
     fn another_one() {
-	return f + b;
+	var g = 9l
+	return f + g;
     }
 }
 test();

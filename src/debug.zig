@@ -143,6 +143,7 @@ pub const DebugCode = struct {
             .CLOSURE => self.closureInstruction("OP_CLOSURE"),
             .GET_UPVAL => self.byteInstruction("OP_GET_UPVAL"),
             .SET_UPVAL => self.byteInstruction("OP_SET_UPVAL"),
+            .CLOSE_UPVAL => self.simpleInstruction("OP_CLOSE_UPVAL"),
             _ => error.UnknownOpcode
         };
     }

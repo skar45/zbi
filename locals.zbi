@@ -1,0 +1,14 @@
+fn foo() {
+    var a = 1;
+    var b = 2;
+    fn bar() {
+	var c = 3;
+    }
+
+    fn baz() {
+	var d = 4
+	print d;
+    }
+
+    baz();
+}

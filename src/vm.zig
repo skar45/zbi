@@ -446,6 +446,17 @@ pub const VM = struct {
                         else => return error.InvalidTableOp
                     }
                 },
+                .CLOSURE => {
+                    const global_index: usize = @intFromEnum(self.instructions[self.ip]);
+                    self.ip += 1;
+                    const value = try self.peek(0);
+                    switch(value) {
+                        .function => |f| {
+                            self.globals[global_index] = Value.setClosure(&f, self._allocator);
+                        },
+                        else => unreachable
+                    }
+                },
                 else => unreachable,
                 _ => break
             }

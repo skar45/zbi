@@ -12,12 +12,19 @@ pub const Value = union(enum) {
     table: *Table,
     closure: ClosureObj,
     function: FnObj,
+    upvalue: UpValue,
     nil,
     void,
 
-    pub fn setFn(code_ptr: usize, airity: u8) Value {
+    pub fn setUpVal(slot: *Value) Value {
         return Value {
-            .function = FnObj.init(code_ptr, airity)
+            .upvalue = UpValue.init(slot)
+        };
+    }
+
+    pub fn setFn(code_ptr: usize, airity: u8, upvalue_count: u8) Value {
+        return Value {
+            .function = FnObj.init(code_ptr, airity, upvalue_count)
         };
     }
 
@@ -60,6 +67,13 @@ pub const Value = union(enum) {
     pub fn setNil() Value {
         return Value {
             .nil = undefined
+        };
+    }
+
+    pub fn setClosure(fn_obj: *const FnObj, allocator: *const Allocator) Value {
+        const closure = ClosureObj.init(allocator, fn_obj);
+        return Value {
+            .closure = closure
         };
     }
 
@@ -213,30 +227,44 @@ pub const TableHash = struct {
 pub const FnObj = struct {
     fn_segment: usize,
     airity: u8,
+    up_value_count: u8,
 
-    pub fn init(fn_segment: usize, airity: u8) FnObj {
+    pub fn init(fn_segment: usize, airity: u8, up_value_count: u8) FnObj {
         return FnObj {
             .fn_segment = fn_segment,
-            .airity = airity
+            .airity = airity,
+            .up_value_count = up_value_count
+        };
+    }
+};
+
+
+pub const UpValue = struct {
+    location: *Value,
+    pub fn init(slot: *Value) UpValue {
+        return UpValue {
+            .location = slot
         };
     }
 };
 
 pub const ClosureObj = struct {
-    values: ArrayList(Value),
     fn_obj: *const FnObj,
+    upvalues: ArrayList(*const UpValue),
+    upvalue_count: usize,
     _allocator: *const Allocator,
 
     pub fn init(allocator: *const Allocator, fn_obj: *const FnObj) ClosureObj {
+        const list =  ArrayList(*const UpValue).initCapacity(allocator.*, fn_obj.up_value_count) catch {
+            std.debug.print("Allocator OOM", .{});
+            std.process.exit(64);
+        };
         return ClosureObj {
             .fn_obj = fn_obj,
-            .values = ArrayList(Value).initCapacity(allocator.*, 32) catch unreachable,
-            ._allocator = allocator
+            ._allocator = allocator,
+            .upvalues = list,
+            .upvalue_count = fn_obj.up_value_count
         };
-    }
-
-    pub fn writeChunk(self: *ClosureObj, op: OpCode) void {
-        self.code.append(op);
     }
 
     pub fn addConstant(self: *ClosureObj, value: Value) OpCode {
@@ -245,7 +273,7 @@ pub const ClosureObj = struct {
     }
 
     pub fn deinit(self: *ClosureObj) void {
-        self.values.deinit(self._allocator.*);
+        self.upvalues.deinit(self._allocator.*);
     }
 };
 
@@ -320,5 +348,6 @@ pub fn printValue(stdout: *std.Io.Writer, value: Value) !void {
         .closure => |c| try stdout.print("cs {d}({d})", .{c.fn_obj.fn_segment, c.fn_obj.airity}),
         .nil => try stdout.print("nil ", .{}),
         .void => try stdout.print("void", .{}),
+        .upvalue => try stdout.print("upvalue", .{})
     }
 }

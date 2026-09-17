@@ -38,6 +38,7 @@ pub const CompilerFunction = struct {
 pub const Local = struct {
     name: Token,
     depth: isize,
+    is_captured: bool
 };
 
 pub const UpVal = struct {
@@ -250,7 +251,11 @@ pub const Parser = struct {
         if (self.compiler.local_count == 0) return;
         const scope_depth = self.compiler.scope_depth;
         while (self.compiler.locals[self.compiler.local_count - 1].depth > scope_depth) {
-            self.emitByte(.POP);
+            if (self.compiler.locals[self.compiler.local_count - 1].is_captured) {
+                self.emitByte(.CLOSE_UPVAL);
+            } else {
+                self.emitByte(.POP);
+            }
             self.compiler.local_count -= 1;
             if (self.compiler.local_count == 0) break;
         }
@@ -335,6 +340,7 @@ pub const Parser = struct {
     fn resolveUpVal(self: *Parser, name: *const Token) ?usize {
         const local = self.resolveLocal(name, false);
         if (local) |l| {
+            self.compiler.locals[l].is_captured = true;
             return self.addUpVal(l, true);
         }
 //         const upval = self.resolveUpVal(name);
@@ -369,7 +375,8 @@ pub const Parser = struct {
         }
         const local = Local {
             .depth = -1,
-            .name = token.*
+            .name = token.*,
+            .is_captured = false
         };
         self.compiler.locals[self.compiler.local_count] = local;
         self.compiler.local_count += 1;
@@ -448,7 +455,10 @@ pub const Parser = struct {
     inline fn parseFunction(self: *Parser,  comptime msg: []const u8) OpCode {
         self.consume(.IDENTIFIER, msg);
         self.declareFunction();
+        // ??
+        self.declareVariable();
         if (self.compiler.scope_depth > 0) return OpCode.RETURN;
+        std.debug.print("global func name: {s} \n", .{self.previous().start.items});
         return self.globalConstant(self.previous());
     }
 
@@ -479,6 +489,7 @@ pub const Parser = struct {
 
     inline fn fnDeclaration(self: *Parser) void {
         const global = self.parseFunction("Expected function name");
+        if (self.compiler.scope_depth > 0) self.markInitialized();
         const prev_frame = self.compiler.current_frame;
         self.compilingChunk.addCodeSegment();
         self.compiler.current_frame += 1;
@@ -495,7 +506,7 @@ pub const Parser = struct {
         const func_frame = self.compiler.current_frame;
         const up_val_count = compiler_func.up_value_count;
         self.compiler.current_frame = prev_frame;
-        self.emitConstant(Value.setFn(func_frame, compiler_func.airity));
+        self.emitConstant(Value.setFn(func_frame, compiler_func.airity, compiler_func.up_value_count));
         self.emitBytes(.CLOSURE, global);
         self.emitByte(@enumFromInt(up_val_count));
         for (0..up_val_count) |i| {
@@ -655,7 +666,6 @@ pub const Parser = struct {
             setOp = .SET_LOCAL;
         } else {
             if (self.resolveUpVal(name)) |val| {
-                std.debug.print("hello?? \n", .{});
                 arg = @enumFromInt(val);
                 getOp = .GET_UPVAL;
                 setOp = .SET_UPVAL;
