@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const oom_error = @import("debug.zig").oom_error;
+
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const ArrayHashMap = std.array_hash_map.Custom;
@@ -241,10 +243,12 @@ pub const FnObj = struct {
 
 pub const UpValue = struct {
     location: *Value,
-    pub fn init(slot: *Value) UpValue {
-        return UpValue {
-            .location = slot
+    pub fn init(slot: *Value, allocator: *const Allocator) *UpValue {
+        var val = allocator.alloc(UpValue, 1) catch {
+            std.process.exit(64);
         };
+        val[0].location = slot;
+        return &val[0];
     }
 };
 
@@ -256,8 +260,7 @@ pub const ClosureObj = struct {
 
     pub fn init(allocator: *const Allocator, fn_obj: *const FnObj) ClosureObj {
         const list =  ArrayList(*const UpValue).initCapacity(allocator.*, fn_obj.up_value_count) catch {
-            std.debug.print("Allocator OOM", .{});
-            std.process.exit(64);
+            oom_error();
         };
         return ClosureObj {
             .fn_obj = fn_obj,
@@ -267,9 +270,8 @@ pub const ClosureObj = struct {
         };
     }
 
-    pub fn addConstant(self: *ClosureObj, value: Value) OpCode {
-        self.values.append(self._allocator.*, value);
-        return @intFromEnum(self.values.items.len - 1);
+    pub fn addUpval(self: *ClosureObj, upvalue: *const UpValue) void {
+        self.upvalues.append(self._allocator.*, upvalue) catch oom_error();
     }
 
     pub fn deinit(self: *ClosureObj) void {

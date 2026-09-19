@@ -11,6 +11,7 @@ const Allocator = std.mem.Allocator;
 const printValue = values.printValue;
 const Value = values.Value;
 const Table = values.Table;
+const UpValue = values.UpValue;
 const Chunks = c.Chunks;
 const OpCode = c.OpCode;
 const DebugCode = debug.DebugCode;
@@ -244,6 +245,10 @@ pub const VM = struct {
         return self.chunks.code_list.items[segment].items;
     }
 
+    inline fn captureUpvalue(self: *VM, local: *Value) *UpValue {
+        return UpValue.init(local, self._allocator);
+    }
+
     fn runVM(self: *VM) !void {
         while (self.instructions.len > self.ip) {
             if (comptime debug.ENABLE_LOGGING) {
@@ -307,6 +312,9 @@ pub const VM = struct {
                     const global_index: usize = @intFromEnum(self.instructions[self.ip]);
                     self.ip += 1;
                     const global_value = self.globals[global_index];
+                    std.debug.print("getting global: ", .{});
+                    try printValue(self.stdout, global_value);
+                    std.debug.print(" ------ \n", .{});
                     switch (global_value) {
                         .void => {
                             return error.VarUndefined;
@@ -452,7 +460,18 @@ pub const VM = struct {
                     const value = try self.peek(0);
                     switch(value) {
                         .function => |f| {
-                            self.globals[global_index] = Value.setClosure(&f, self._allocator);
+                            const closure = Value.setClosure(&f, self._allocator);
+                            self.globals[global_index] = closure;
+                            self.ip += 1;
+                            for (0..f.up_value_count) |_| {
+                                self.ip += 1;
+                                const index = @intFromEnum(self.instructions[self.ip]);
+                                const ptr = self.call_stack[self.call_stack_ptr].base_ptr;
+                                switch (closure) {
+                                    .closure => |cls| @constCast(&cls).addUpVal(self.captureUpvalue(&self.stack[ptr + index])),
+                                    else => unreachable,
+                                }
+                            }
                         },
                         else => unreachable
                     }

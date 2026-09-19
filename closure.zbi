@@ -1,0 +1,13 @@
+fn a_fn() {
+    var a = 0;
+    var test = "test";
+
+    fn set_test() {
+	print test;
+    }
+
+    return set_test;
+}
+
+var p_test = a_fn();
+p_test();

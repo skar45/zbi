@@ -12,3 +12,7 @@ fn outer() {
   print "return from outer";
   return middle;
 }
+
+var a = outer();
+var b = a();
+b();

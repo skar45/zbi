@@ -10,6 +10,12 @@ const Chunks = c.Chunks;
 
 pub const ENABLE_LOGGING = config.DEBUG;
 
+
+pub fn oom_error() noreturn {
+        std.debug.print("Allocator OOM", .{});
+        std.process.exit(64);
+    }
+
 pub const DebugCode = struct {
     segment: usize,
     offset: usize,
